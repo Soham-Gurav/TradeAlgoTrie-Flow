@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { createChart, CandlestickSeries } from "lightweight-charts";
 import MagicBento, { type MagicBentoItem } from "./components/MagicBento";
+import CoinLogo from "./components/CoinLogo";
 
 const BACKEND_URL = "http://localhost:8085";
 
@@ -1127,6 +1128,7 @@ export default function MarketCentsApp() {
                   Algorithmic Execution Studio
                 </span>
                 <h2 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+                  <CoinLogo symbol={selectedPair} size={32} />
                   {selectedPair}
                   <span className="text-neutral-400 font-mono font-medium text-sm px-2.5 py-1 rounded-lg bg-white/5 border border-white/10">
                     {timeframe.toUpperCase()} • {barDepth} Bars
@@ -1235,7 +1237,10 @@ export default function MarketCentsApp() {
                                     }}
                                     className="w-full px-3 py-2 flex items-center justify-between text-xs font-mono hover:bg-white/10 transition text-left"
                                   >
-                                    <span className="font-bold text-white">{s.symbol}</span>
+                                    <span className="flex items-center gap-2 font-bold text-white">
+                                      <CoinLogo symbol={s.symbol} size={18} />
+                                      {s.symbol}
+                                    </span>
                                     <span className={s.change24h >= 0 ? "text-emerald-400" : "text-rose-500"}>
                                       ${s.price >= 1 ? s.price.toFixed(2) : s.price.toFixed(5)} ({s.change24h >= 0 ? "+" : ""}{s.change24h.toFixed(2)}%)
                                     </span>
@@ -1321,11 +1326,7 @@ export default function MarketCentsApp() {
                                     }`}
                                   >
                                     <td className="py-2.5 px-2 flex items-center gap-2.5">
-                                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-[10px] ${
-                                        active ? "bg-emerald-500 text-black" : "bg-white/10 text-white"
-                                      }`}>
-                                        {coin.symbol.slice(0, 3)}
-                                      </div>
+                                      <CoinLogo symbol={coin.symbol} size={28} active={active} />
                                       <div>
                                         <span className="font-sans font-bold text-white block">{coin.symbol}</span>
                                         <span className="text-[10px] text-neutral-500">{coin.pair}</span>
@@ -1361,7 +1362,8 @@ export default function MarketCentsApp() {
                           <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest block">Market Benchmark</span>
                           <h4 className="text-lg font-bold tracking-tight text-white">Bitcoin Market Cap & Dominance</h4>
                         </div>
-                        <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-mono font-bold text-emerald-400">
+                        <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[11px] font-mono font-bold text-emerald-400 flex items-center gap-1.5">
+                          <CoinLogo symbol="BTC" size={16} />
                           BTCUSDT
                         </span>
                       </div>
@@ -1406,7 +1408,10 @@ export default function MarketCentsApp() {
                       <div className="flex justify-between items-start">
                         <div>
                           <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-widest block">Active Analysis Target</span>
-                          <div className="text-3xl font-extrabold tracking-tight text-white mt-1">{selectedPair}</div>
+                          <div className="flex items-center gap-3 mt-1">
+                            <CoinLogo symbol={selectedPair} size={34} />
+                            <div className="text-3xl font-extrabold tracking-tight text-white">{selectedPair}</div>
+                          </div>
                         </div>
                         <div className="text-right font-mono">
                           <span className="text-2xl font-bold text-white block">
