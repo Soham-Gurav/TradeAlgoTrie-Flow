@@ -653,7 +653,7 @@ export default function SimulationStudio({
           items={[
             {
               id: "sim-mc-fan",
-              colSpan: 2,
+              colSpan: 4,
               rowSpan: 2,
               content: (
                 <div className="flex flex-col h-full justify-between">
@@ -865,6 +865,20 @@ export default function SimulationStudio({
                     </div>
 
                     <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-0.5 bg-[#11141e] p-0.5 rounded-lg border border-white/10">
+                        {(["15m", "1h", "4h", "1d"] as const).map((tf) => (
+                          <button
+                            key={tf}
+                            type="button"
+                            onClick={() => setTspInterval(tf)}
+                            className={`px-1.5 py-0.5 rounded uppercase font-bold transition ${
+                              tspInterval === tf ? "bg-amber-400 text-black" : "text-neutral-400 hover:text-white"
+                            }`}
+                          >
+                            {tf}
+                          </button>
+                        ))}
+                      </div>
                       <button
                         type="button"
                         onClick={() => setShowExactOverlay(!showExactOverlay)}
@@ -911,126 +925,12 @@ export default function SimulationStudio({
                       </span>
                     </div>
                     <span className="text-emerald-400 font-bold">
-                      Metric Axiom: {tspData?.validMetric ? "VERIFIED" : "CHECKING"}
+                      {tspData
+                        ? `Cost: ${tspData.approxCost.toFixed(3)} • OPT: ${
+                            tspData.exactOptimalCost > 0 ? tspData.exactOptimalCost.toFixed(3) : "—"
+                          } • Ratio: ${tspData.approxRatioVsOpt.toFixed(2)}× (≤2×)`
+                        : "Metric Axiom: CHECKING"}
                     </span>
-                  </div>
-                </div>
-              ),
-            },
-            {
-              id: "sim-tsp-metrics",
-              colSpan: 2,
-              rowSpan: 2,
-              content: (
-                <div className="flex flex-col h-full justify-between gap-2.5">
-                  <div className="flex justify-between items-start pb-2 border-b border-white/10">
-                    <div>
-                      <span className="text-[10px] font-mono text-amber-400 uppercase tracking-widest block font-bold">
-                        BASELINE COMPARISON &amp; CORRELATION METRIC
-                      </span>
-                      <h4 className="text-base font-bold text-white">
-                        d(i, j) = √(2 · (1 − ρᵢⱼ)) Tour &amp; Ratio Audit
-                      </h4>
-                    </div>
-                    <div className="flex items-center gap-1 bg-[#11141e] p-0.5 rounded-lg border border-white/10 text-[10px] font-mono">
-                      {(["15m", "1h", "4h", "1d"] as const).map((tf) => (
-                        <button
-                          key={tf}
-                          type="button"
-                          onClick={() => setTspInterval(tf)}
-                          className={`px-1.5 py-0.5 rounded uppercase font-bold transition ${
-                            tspInterval === tf ? "bg-amber-400 text-black" : "text-neutral-400 hover:text-white"
-                          }`}
-                        >
-                          {tf}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Baseline Table */}
-                  <div className="border border-white/10 rounded-xl bg-[#0a0d14] overflow-hidden">
-                    <table className="w-full text-left text-xs font-mono">
-                      <thead>
-                        <tr className="border-b border-white/10 text-neutral-500 uppercase text-[10px]">
-                          <th className="py-2 px-3">Method</th>
-                          <th className="py-2 px-3">Complexity</th>
-                          <th className="py-2 px-3 text-right">Tour / Tree Cost</th>
-                          <th className="py-2 px-3 text-right">Runtime</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        <tr>
-                          <td className="py-1.5 px-3 text-amber-400 font-bold">Prim&apos;s MST (Lower Bound)</td>
-                          <td className="py-1.5 px-3 text-neutral-400">O(V²)</td>
-                          <td className="py-1.5 px-3 text-right text-white font-bold">
-                            {tspData ? tspData.mstCost.toFixed(4) : "—"}
-                          </td>
-                          <td className="py-1.5 px-3 text-right text-neutral-400">Included</td>
-                        </tr>
-                        <tr>
-                          <td className="py-1.5 px-3 text-emerald-400 font-bold">Metric TSP 2-Approx</td>
-                          <td className="py-1.5 px-3 text-neutral-400">O(V²)</td>
-                          <td className="py-1.5 px-3 text-right text-emerald-400 font-bold">
-                            {tspData ? tspData.approxCost.toFixed(4) : "—"}
-                          </td>
-                          <td className="py-1.5 px-3 text-right text-white">
-                            {tspData ? `${(tspData.approxTimeNs / 1000).toFixed(1)} µs` : "—"}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="py-1.5 px-3 text-sky-400 font-bold">Exact Held-Karp (OPT)</td>
-                          <td className="py-1.5 px-3 text-neutral-400">O(V²·2^V)</td>
-                          <td className="py-1.5 px-3 text-right text-sky-400 font-bold">
-                            {tspData && tspData.exactOptimalCost > 0 ? tspData.exactOptimalCost.toFixed(4) : "N > 12"}
-                          </td>
-                          <td className="py-1.5 px-3 text-right text-white">
-                            {tspData && tspData.exactTimeNs > 0 ? `${(tspData.exactTimeNs / 1000).toFixed(1)} µs` : "—"}
-                          </td>
-                        </tr>
-                        <tr>
-                          <td className="py-1.5 px-3 text-neutral-300 font-bold">Nearest-Neighbor Greedy</td>
-                          <td className="py-1.5 px-3 text-neutral-400">O(V²)</td>
-                          <td className="py-1.5 px-3 text-right text-neutral-300 font-bold">
-                            {tspData ? tspData.nearestNeighborCost.toFixed(4) : "—"}
-                          </td>
-                          <td className="py-1.5 px-3 text-right text-neutral-400">Baseline</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Tour Sequence & Distance Matrix Preview */}
-                  <div className="flex-1 flex flex-col justify-between gap-2 bg-[#0a0d14] border border-white/10 rounded-xl p-3 font-mono text-xs">
-                    <div>
-                      <span className="text-[10px] text-neutral-500 uppercase block mb-1">
-                        2-Approximation Rebalancing Sequence ({tspData?.assetCount || tspSymbols.length} Assets)
-                      </span>
-                      <div className="text-[11px] text-emerald-400 font-bold leading-relaxed break-words">
-                        {tspData?.approxTour && tspData?.nodes
-                          ? tspData.approxTour
-                              .map((idx: number) => tspData.nodes[idx]?.symbol?.replace("USDT", ""))
-                              .join(" → ")
-                          : "Computing Prim's MST + Preorder DFS on Java :8085..."}
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/10">
-                      <div>
-                        <span className="text-[10px] text-neutral-500 uppercase block">Empirical Approx Ratio</span>
-                        <span className="text-lg font-extrabold text-emerald-400">
-                          {tspData ? `${tspData.approxRatioVsOpt.toFixed(3)}×` : "—"}
-                        </span>
-                        <span className="text-[10px] text-neutral-400 block">vs Exact OPT (Bound ≤ 2.000×)</span>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[10px] text-neutral-500 uppercase block">Tour / MST Ratio</span>
-                        <span className="text-lg font-extrabold text-amber-400">
-                          {tspData ? `${tspData.approxBoundVsMst.toFixed(3)}×` : "—"}
-                        </span>
-                        <span className="text-[10px] text-neutral-400 block">Theory: Cost(Tour) ≤ 2·MST</span>
-                      </div>
-                    </div>
                   </div>
                 </div>
               ),
