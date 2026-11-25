@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATMUSDT &mdash; Quantitative Order Flow & High-Movement Crypto Terminal</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background-color: #0b0e14;
+            color: #d1d4dc;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+        }
+        .header-bar {
+            height: 44px;
+            background: #131722;
+            border-bottom: 1px solid #232838;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 14px;
+        }
+        .left-group { display: flex; align-items: center; gap: 12px; }
+        .brand-title {
+            font-size: 14px;
+            font-weight: 800;
+            color: #f1f5f9;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .price-pill {
+            background: #1e2638;
+            padding: 3px 9px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #00e676;
+            border: 1px solid #2a354d;
+            font-family: monospace;
+        }
+        .confluence-group { display: flex; gap: 5px; align-items: center; }
+        .tf-badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .bg-bull { background: rgba(8, 153, 129, 0.25); color: #089981; border: 1px solid #089981; }
+        .bg-bear { background: rgba(242, 54, 69, 0.25); color: #f23645; border: 1px solid #f23645; }
+
+        .movers-strip {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: #10141f;
+            padding: 2px 8px;
+            border-radius: 6px;
+            border: 1px solid #1e2638;
+        }
+        .movers-title {
+            font-size: 9px;
+            font-weight: 800;
+            color: #ff9800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .mover-btn {
+            background: #192030;
+            border: 1px solid #273147;
+            color: #cbd5e1;
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        .mover-btn:hover { background: #232c40; color: #fff; }
+        .mover-btn.active { background: #2962ff; color: #fff; border-color: #3b82f6; }
+        .mover-chg-up { color: #00e676; }
+        .mover-chg-down { color: #f23645; }
+
+        .view-switcher {
+            display: flex;
+            background: #181d2a;
+            padding: 2px;
+            border-radius: 6px;
+            border: 1px solid #232838;
+            gap: 2px;
+        }
+        .btn-tab {
+            background: transparent;
+            border: none;
+            color: #8e96aa;
+            padding: 3px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-tab:hover { color: #f1f5f9; background: #23293a; }
+        .btn-tab.active { color: #fff; background: #2962ff; }
+
+        .orderflow-subbar {
+            height: 32px;
+            background: #0d111a;
+            border-bottom: 1px solid #1c2230;
+            display: flex;
+            align-items: center;
+            padding: 0 14px;
+            gap: 20px;
+            font-size: 11px;
+        }
+        .of-item { display: flex; align-items: center; gap: 7px; }
+        .of-label { color: #64748b; font-weight: 700; font-size: 10px; letter-spacing: 0.5px; }
+        .of-val { font-weight: 700; font-family: monospace; }
+        .text-bull { color: #00e676; }
+        .text-bear { color: #f23645; }
+        .delta-bar-container {
+            width: 65px;
+            height: 8px;
+            background: #1e2638;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+        }
+        .delta-bar-fill { height: 100%; transition: width 0.3s; }
+        .ob-meter-container {
+            width: 85px;
+            height: 8px;
+            background: #1e2638;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+        }
+        .ob-bid-fill { height: 100%; background: #089981; transition: width 0.3s; }
+        .ob-ask-fill { height: 100%; background: #f23645; transition: width 0.3s; }
+        .of-meta { color: #64748b; font-size: 10px; font-family: monospace; }
+        .stream-status {
+            margin-left: auto;
+            color: #38bdf8;
+            font-size: 10px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .pulse-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #00e676;
+            box-shadow: 0 0 6px #00e676;
+            animation: pulse-stream 1.5s infinite;
+        }
+        @keyframes pulse-stream {
+            0% { opacity: 0.3; }
+            50% { opacity: 1; }
+            100% { opacity: 0.3; }
+        }
+
+        .dashboard-container {
+            height: calc(100vh - 76px);
+            padding: 5px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            grid-gap: 5px;
+        }
+
+        .dashboard-container.max-1m { grid-template-columns: 1fr 0px; grid-template-rows: 1fr 0px; }
+        .dashboard-container.max-1m .card:not(#card-1m) { display: none; }
+        .dashboard-container.max-5m { grid-template-columns: 1fr 0px; grid-template-rows: 1fr 0px; }
+        .dashboard-container.max-5m .card:not(#card-5m) { display: none; }
+        .dashboard-container.max-15m { grid-template-columns: 1fr 0px; grid-template-rows: 1fr 0px; }
+        .dashboard-container.max-15m .card:not(#card-15m) { display: none; }
+        .dashboard-container.max-1h { grid-template-columns: 1fr 0px; grid-template-rows: 1fr 0px; }
+        .dashboard-container.max-1h .card:not(#card-1h) { display: none; }
+
+        .card {
+            background: #131722;
+            border: 1px solid #202636;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+            min-height: 0;
+        }
+        .card-header {
+            height: 26px;
+            min-height: 26px;
+            background: #161b26;
+            border-bottom: 1px solid #202636;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 10px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .tag-tf {
+            background: #23293a;
+            color: #2962ff;
+            font-weight: 800;
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+        .btn-expand {
+            background: transparent;
+            border: none;
+            color: #8e96aa;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 1px 5px;
+            border-radius: 3px;
+        }
+        .btn-expand:hover { color: #fff; background: #23293a; }
+
+        .trade-plan-banner {
+            height: 25px;
+            min-height: 25px;
+            background: #10141e;
+            border-bottom: 1px solid #1c2230;
+            display: flex;
+            align-items: center;
+            padding: 0 10px;
+            font-size: 11px;
+            gap: 10px;
+            color: #94a3b8;
+        }
+        .trade-plan-banner b { color: #f1f5f9; }
+        .pill-action {
+            font-weight: 800;
+            padding: 1px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+        }
+        .bg-stopped { background: rgba(242, 54, 69, 0.15); color: #ef5350; border: 1px solid #ef5350; }
+        .bg-won { background: rgba(0, 230, 118, 0.2); color: #00e676; border: 1px solid #00e676; }
+        .pnl-live-text {
+            margin-left: auto;
+            font-weight: 700;
+            font-family: monospace;
+        }
+
+        .chart-viewport {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .hover-hud {
+            position: absolute;
+            top: 5px;
+            left: 8px;
+            z-index: 10;
+            background: rgba(19, 23, 34, 0.92);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(43, 53, 77, 0.8);
+            padding: 2px 7px;
+            border-radius: 4px;
+            font-size: 10px;
+            color: #94a3b8;
+            pointer-events: none;
+            display: flex;
+            gap: 8px;
+            font-family: monospace;
+        }
+        .hover-hud span b { color: #f1f5f9; }
+        .hud-pattern { font-weight: 700; color: #ffeb3b; display: none; }
+    </style>
+</head>
+<body>
+    <header class="header-bar">
+        <div class="left-group">
+            <div class="brand-title">&#9889; <span id="active-symbol-title">ATMUSDT</span> Terminal</div>
+            <div class="price-pill" id="live-btc-price">$1.0010</div>
+            <div class="confluence-group">
+                <span class="tf-badge bg-bear" id="badge-top-1m">1M: ▼ BEAR</span>
+                <span class="tf-badge bg-bear" id="badge-top-5m">5M: ▼ BEAR</span>
+                <span class="tf-badge bg-bull" id="badge-top-15m">15M: ▲ BULL</span>
+                <span class="tf-badge bg-bull" id="badge-top-1h">1H: ▲ BULL</span>
+            </div>
+        </div>
+
+        <div class="movers-strip">
+            <span class="movers-title">&#128293; TOP 24H MOVERS:</span>
+            <div id="movers-pills-container" style="display: flex; gap: 4px;"></div>
+        </div>
+
+        <div class="view-switcher">
+            <button class="btn-tab active" onclick="switchView('grid')">&#8862; 2x2 Grid</button>
+            <button class="btn-tab" onclick="switchView('max-1m')">1M</button>
+            <button class="btn-tab" onclick="switchView('max-5m')">5M</button>
+            <button class="btn-tab" onclick="switchView('max-15m')">15M</button>
+            <button class="btn-tab" onclick="switchView('max-1h')">1H</button>
+            <a href="trie_predictor.html" target="_blank" style="text-decoration:none;"><button class="btn-tab" style="background:#38bdf8; color:#04101d; font-weight:800;" title="Open Dedicated Double Trie Autofill Studio">&#128302; Trie Studio</button></a>
+        </div>
+    </header>
+
+    <div class="orderflow-subbar">
+        <div class="of-item">
+            <span class="of-label">&#128202; CVD DELTA (200t):</span>
+            <span class="of-val text-bear" id="live-delta-val">-5444.00 (Sellers Dominant)</span>
+            <div class="delta-bar-container">
+                <div class="delta-bar-fill" id="live-delta-fill" style="width: 38.7%; background: #f23645;"></div>
+            </div>
+        </div>
+        <div class="of-item">
+            <span class="of-label">&#128218; ORDER BOOK DEPTH (Top 20):</span>
+            <span class="of-val text-bull" id="live-ob-val">+22.5% (Bid Heavy)</span>
+            <div class="ob-meter-container">
+                <div class="ob-bid-fill" id="live-ob-bid-fill" style="width: 61.3%;"></div>
+                <div class="ob-ask-fill" id="live-ob-ask-fill" style="width: 38.7%;"></div>
+            </div>
+            <span class="of-meta" id="live-ob-vols">Bids: 17627.13 | Asks: 11141.17</span>
+        </div>
+        <div class="of-item stream-status">
+            <span class="pulse-dot"></span>
+            <span id="stream-label">0ms COMBINED BINANCE STREAM ACTIVE</span>
+        </div>
+    </div>
+
+    <main class="dashboard-container" id="dash-grid">
+        <!-- 1M CHART -->
+        <div class="card" id="card-1m">
+            <div class="card-header">
+                <div><span class="tag-tf">1M</span> Micro Trigger / Early Spark</div>
+                <button class="btn-expand" title="Maximize" onclick="toggleMaximize('1m')">&#x26F6;</button>
+            </div>
+            <div class="trade-plan-banner" id="banner-1m">
+                <span id="badge-1m" class="pill-action">WAIT</span>
+                <span id="plan-desc-1m">Scanning...</span>
+                <span class="pnl-live-text" id="pnl-1m"></span>
+            </div>
+            <div class="chart-viewport" id="chart-1m">
+                <div class="hover-hud" id="hud-1m">
+                    <span>O: <b id="o-1m">-</b></span>
+                    <span>H: <b id="h-1m">-</b></span>
+                    <span>L: <b id="l-1m">-</b></span>
+                    <span>C: <b id="c-1m">-</b></span>
+                    <span class="hud-pattern" id="pat-1m"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5M CHART -->
+        <div class="card" id="card-5m">
+            <div class="card-header">
+                <div><span class="tag-tf">5M</span> Short-Term Confirmation</div>
+                <button class="btn-expand" title="Maximize" onclick="toggleMaximize('5m')">&#x26F6;</button>
+            </div>
+            <div class="trade-plan-banner" id="banner-5m">
+                <span id="badge-5m" class="pill-action">WAIT</span>
+                <span id="plan-desc-5m">Scanning...</span>
+                <span class="pnl-live-text" id="pnl-5m"></span>
+            </div>
+            <div class="chart-viewport" id="chart-5m">
+                <div class="hover-hud" id="hud-5m">
+                    <span>O: <b id="o-5m">-</b></span>
+                    <span>H: <b id="h-5m">-</b></span>
+                    <span>L: <b id="l-5m">-</b></span>
+                    <span>C: <b id="c-5m">-</b></span>
+                    <span class="hud-pattern" id="pat-5m"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 15M CHART -->
+        <div class="card" id="card-15m">
+            <div class="card-header">
+                <div><span class="tag-tf">15M</span> Tactical Intraday Trend</div>
+                <button class="btn-expand" title="Maximize" onclick="toggleMaximize('15m')">&#x26F6;</button>
+            </div>
+            <div class="trade-plan-banner" id="banner-15m">
+                <span id="badge-15m" class="pill-action">WAIT</span>
+                <span id="plan-desc-15m">Scanning...</span>
+                <span class="pnl-live-text" id="pnl-15m"></span>
+            </div>
+            <div class="chart-viewport" id="chart-15m">
+                <div class="hover-hud" id="hud-15m">
+                    <span>O: <b id="o-15m">-</b></span>
+                    <span>H: <b id="h-15m">-</b></span>
+                    <span>L: <b id="l-15m">-</b></span>
+                    <span>C: <b id="c-15m">-</b></span>
+                    <span class="hud-pattern" id="pat-15m"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 1H CHART -->
+        <div class="card" id="card-1h">
+            <div class="card-header">
+                <div><span class="tag-tf">1H</span> Macro Market Structure</div>
+                <button class="btn-expand" title="Maximize" onclick="toggleMaximize('1h')">&#x26F6;</button>
+            </div>
+            <div class="trade-plan-banner" id="banner-1h">
+                <span id="badge-1h" class="pill-action">WAIT</span>
+                <span id="plan-desc-1h">Scanning...</span>
+                <span class="pnl-live-text" id="pnl-1h"></span>
+            </div>
+            <div class="chart-viewport" id="chart-1h">
+                <div class="hover-hud" id="hud-1h">
+                    <span>O: <b id="o-1h">-</b></span>
+                    <span>H: <b id="h-1h">-</b></span>
+                    <span>L: <b id="l-1h">-</b></span>
+                    <span>C: <b id="c-1h">-</b></span>
+                    <span class="hud-pattern" id="pat-1h"></span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentSymbol = 'ATMUSDT';
+        const alertDetails = {};
+        const tradePlans   = {};
+        const topMoversList = [{"symbol":"ATMUSDT","chg":39.00,"vol":5.0,"price":0.998000},{"symbol":"LISTAUSDT","chg":28.56,"vol":11.3,"price":0.114800},{"symbol":"PROMUSDT","chg":-28.48,"vol":16.7,"price":4.625000},{"symbol":"MMTUSDT","chg":17.37,"vol":21.8,"price":0.235200},{"symbol":"ZROUSDT","chg":-16.75,"vol":14.3,"price":1.029000},{"symbol":"ZECUSDT","chg":-15.77,"vol":153.9,"price":712.710000},{"symbol":"INJUSDT","chg":-13.83,"vol":13.6,"price":5.906000},{"symbol":"TRUMPUSDT","chg":-12.03,"vol":5.4,"price":0.819000},{"symbol":"MUBARAKUSDT","chg":-10.98,"vol":5.7,"price":0.022950},{"symbol":"QNTUSDT","chg":-10.84,"vol":8.5,"price":144.820000}];
+        const trieForecasts = {"1m":{"target":0.989728,"ret":-1.13,"conf":80.0,"verdict":"STRONG BEARISH AUTOFILL (-1.13% over next 5 bars)","candles":[{"time":1795538160,"open":1.001000,"high":1.001944,"low":0.996281,"close":0.997225,"token":"R_S","conf":50.0},{"time":1795538220,"open":0.997225,"high":0.997605,"low":0.996360,"close":0.996740,"token":"R_S","conf":50.0},{"time":1795538280,"open":0.996740,"high":0.998122,"low":0.996360,"close":0.997742,"token":"G_S","conf":100.0},{"time":1795538340,"open":0.997742,"high":0.998994,"low":0.991481,"close":0.992733,"token":"R_M","conf":100.0},{"time":1795538400,"open":0.992733,"high":0.993484,"low":0.988976,"close":0.989728,"token":"R_S","conf":100.0}]},"5m":{"target":0.989187,"ret":-1.18,"conf":77.5,"verdict":"STRONG BEARISH AUTOFILL (-1.18% over next 5 bars)","candles":[{"time":1795538400,"open":1.001000,"high":1.002515,"low":0.998150,"close":0.999665,"token":"D_S","conf":50.0},{"time":1795538700,"open":0.999665,"high":1.011363,"low":0.995986,"close":1.007684,"token":"G_M","conf":100.0},{"time":1795539000,"open":1.007684,"high":1.011363,"low":0.998659,"close":1.002338,"token":"R_M","conf":100.0},{"time":1795539300,"open":1.002338,"high":1.003853,"low":0.996647,"close":0.998162,"token":"R_S","conf":100.0},{"time":1795539600,"open":0.998162,"high":1.000406,"low":0.986943,"close":0.989187,"token":"R_S","conf":37.5}]},"15m":{"target":1.146498,"ret":14.54,"conf":86.7,"verdict":"STRONG BULLISH AUTOFILL (+14.54% over next 5 bars)","candles":[{"time":1795538700,"open":1.001000,"high":1.063065,"low":0.976600,"close":1.038665,"token":"G_X","conf":33.3},{"time":1795539600,"open":1.038665,"high":1.041715,"low":1.034375,"close":1.037425,"token":"D_S","conf":100.0},{"time":1795540500,"open":1.037425,"high":1.141151,"low":1.013025,"close":1.116751,"token":"G_X","conf":100.0},{"time":1795541400,"open":1.116751,"high":1.141151,"low":1.027899,"close":1.052299,"token":"R_X","conf":100.0},{"time":1795542300,"open":1.052299,"high":1.170898,"low":1.027899,"close":1.146498,"token":"G_X","conf":100.0}]},"1h":{"target":0.986631,"ret":-1.44,"conf":76.7,"verdict":"STRONG BEARISH AUTOFILL (-1.44% over next 5 bars)","candles":[{"time":1795539600,"open":1.001000,"high":1.005555,"low":0.987763,"close":0.992318,"token":"R_S","conf":33.3},{"time":1795543200,"open":0.992318,"high":0.996873,"low":0.987763,"close":0.992318,"token":"D_S","conf":100.0},{"time":1795546800,"open":0.992318,"high":0.996873,"low":0.986335,"close":0.990890,"token":"R_S","conf":50.0},{"time":1795550400,"open":0.990890,"high":0.995445,"low":0.982076,"close":0.986631,"token":"R_S","conf":100.0},{"time":1795554000,"open":0.986631,"high":0.991186,"low":0.982076,"close":0.986631,"token":"D_S","conf":100.0}]}};
+        let currentBtcPrice = 1.001000;
+
+        let liveDelta = {"deltaBtc":-5444.00,"buyVol":9343.06,"sellVol":14787.06,"buyRatioPct":38.7};
+        let liveOrderBook = {"totalBidVol":17627.13,"totalAskVol":11141.17,"imbalancePct":22.5};
+        const recentTrades = [];
+
+        // Initial candle data arrays
+        const initialData1m  = [{"time":1795530960,"open":0.959000,"high":0.972000,"low":0.958000,"close":0.967000},{"time":1795531020,"open":0.968000,"high":0.974000,"low":0.967000,"close":0.968000},{"time":1795531080,"open":0.970000,"high":0.974000,"low":0.968000,"close":0.968000},{"time":1795531140,"open":0.968000,"high":0.973000,"low":0.965000,"close":0.969000},{"time":1795531200,"open":0.966000,"high":0.970000,"low":0.966000,"close":0.970000},{"time":1795531260,"open":0.970000,"high":0.971000,"low":0.967000,"close":0.968000},{"time":1795531320,"open":0.970000,"high":0.970000,"low":0.956000,"close":0.963000},{"time":1795531380,"open":0.960000,"high":0.965000,"low":0.960000,"close":0.961000},{"time":1795531440,"open":0.961000,"high":0.965000,"low":0.960000,"close":0.960000},{"time":1795531500,"open":0.961000,"high":0.965000,"low":0.960000,"close":0.963000},{"time":1795531560,"open":0.964000,"high":0.967000,"low":0.960000,"close":0.961000},{"time":1795531620,"open":0.965000,"high":0.981000,"low":0.963000,"close":0.981000},{"time":1795531680,"open":0.978000,"high":0.982000,"low":0.970000,"close":0.972000},{"time":1795531740,"open":0.973000,"high":0.990000,"low":0.973000,"close":0.989000},{"time":1795531800,"open":0.987000,"high":0.997000,"low":0.984000,"close":0.997000},{"time":1795531860,"open":0.993000,"high":1.010000,"low":0.993000,"close":1.009000},{"time":1795531920,"open":1.009000,"high":1.010000,"low":0.999000,"close":1.001000},{"time":1795531980,"open":1.001000,"high":1.001000,"low":0.984000,"close":0.985000},{"time":1795532040,"open":0.984000,"high":0.987000,"low":0.980000,"close":0.986000},{"time":1795532100,"open":0.984000,"high":1.005000,"low":0.984000,"close":1.002000},{"time":1795532160,"open":1.002000,"high":1.002000,"low":0.989000,"close":0.991000},{"time":1795532220,"open":0.991000,"high":0.996000,"low":0.979000,"close":0.986000},{"time":1795532280,"open":0.983000,"high":0.989000,"low":0.983000,"close":0.988000},{"time":1795532340,"open":0.988000,"high":0.991000,"low":0.985000,"close":0.985000},{"time":1795532400,"open":0.989000,"high":0.995000,"low":0.985000,"close":0.987000},{"time":1795532460,"open":0.990000,"high":0.991000,"low":0.984000,"close":0.988000},{"time":1795532520,"open":0.985000,"high":0.991000,"low":0.982000,"close":0.987000},{"time":1795532580,"open":0.990000,"high":0.990000,"low":0.987000,"close":0.987000},{"time":1795532640,"open":0.986000,"high":0.988000,"low":0.983000,"close":0.983000},{"time":1795532700,"open":0.986000,"high":0.989000,"low":0.982000,"close":0.989000},{"time":1795532760,"open":0.986000,"high":0.991000,"low":0.983000,"close":0.990000},{"time":1795532820,"open":0.988000,"high":1.000000,"low":0.986000,"close":1.000000},{"time":1795532880,"open":0.999000,"high":1.025000,"low":0.999000,"close":1.023000},{"time":1795532940,"open":1.023000,"high":1.026000,"low":1.016000,"close":1.023000},{"time":1795533000,"open":1.020000,"high":1.022000,"low":1.004000,"close":1.009000},{"time":1795533060,"open":1.009000,"high":1.019000,"low":1.009000,"close":1.012000},{"time":1795533120,"open":1.013000,"high":1.014000,"low":0.996000,"close":1.002000},{"time":1795533180,"open":1.000000,"high":1.008000,"low":0.996000,"close":1.004000},{"time":1795533240,"open":1.004000,"high":1.013000,"low":0.998000,"close":1.006000},{"time":1795533300,"open":1.007000,"high":1.009000,"low":0.999000,"close":0.999000},{"time":1795533360,"open":1.000000,"high":1.000000,"low":0.995000,"close":0.998000},{"time":1795533420,"open":0.998000,"high":0.998000,"low":0.980000,"close":0.987000},{"time":1795533480,"open":0.987000,"high":1.000000,"low":0.982000,"close":1.000000},{"time":1795533540,"open":1.000000,"high":1.009000,"low":0.999000,"close":1.002000},{"time":1795533600,"open":1.002000,"high":1.004000,"low":0.992000,"close":0.996000},{"time":1795533660,"open":0.996000,"high":1.007000,"low":0.994000,"close":1.007000},{"time":1795533720,"open":1.004000,"high":1.006000,"low":0.999000,"close":0.999000},{"time":1795533780,"open":1.000000,"high":1.005000,"low":1.000000,"close":1.005000},{"time":1795533840,"open":1.003000,"high":1.005000,"low":0.992000,"close":0.998000},{"time":1795533900,"open":0.995000,"high":0.997000,"low":0.993000,"close":0.997000},{"time":1795533960,"open":0.996000,"high":0.996000,"low":0.984000,"close":0.989000},{"time":1795534020,"open":0.989000,"high":1.001000,"low":0.982000,"close":0.999000},{"time":1795534080,"open":1.002000,"high":1.002000,"low":0.996000,"close":0.999000},{"time":1795534140,"open":0.996000,"high":1.003000,"low":0.995000,"close":1.002000},{"time":1795534200,"open":1.002000,"high":1.006000,"low":0.998000,"close":1.005000},{"time":1795534260,"open":1.003000,"high":1.028000,"low":1.003000,"close":1.023000},{"time":1795534320,"open":1.024000,"high":1.024000,"low":1.009000,"close":1.017000},{"time":1795534380,"open":1.016000,"high":1.016000,"low":1.000000,"close":1.007000},{"time":1795534440,"open":1.007000,"high":1.013000,"low":1.006000,"close":1.011000},{"time":1795534500,"open":1.013000,"high":1.013000,"low":1.000000,"close":1.004000},{"time":1795534560,"open":1.005000,"high":1.006000,"low":1.000000,"close":1.004000},{"time":1795534620,"open":1.004000,"high":1.005000,"low":0.996000,"close":1.001000},{"time":1795534680,"open":0.997000,"high":1.000000,"low":0.997000,"close":0.997000},{"time":1795534740,"open":0.997000,"high":1.000000,"low":0.982000,"close":0.984000},{"time":1795534800,"open":0.988000,"high":0.994000,"low":0.983000,"close":0.986000},{"time":1795534860,"open":0.989000,"high":0.992000,"low":0.985000,"close":0.988000},{"time":1795534920,"open":0.985000,"high":0.989000,"low":0.979000,"close":0.986000},{"time":1795534980,"open":0.986000,"high":0.991000,"low":0.985000,"close":0.989000},{"time":1795535040,"open":0.988000,"high":0.992000,"low":0.986000,"close":0.990000},{"time":1795535100,"open":0.990000,"high":0.990000,"low":0.985000,"close":0.988000},{"time":1795535160,"open":0.985000,"high":0.989000,"low":0.979000,"close":0.986000},{"time":1795535220,"open":0.983000,"high":0.987000,"low":0.982000,"close":0.987000},{"time":1795535280,"open":0.986000,"high":0.989000,"low":0.978000,"close":0.986000},{"time":1795535340,"open":0.987000,"high":0.990000,"low":0.948000,"close":0.950000},{"time":1795535400,"open":0.952000,"high":1.007000,"low":0.952000,"close":0.988000},{"time":1795535460,"open":0.987000,"high":0.991000,"low":0.984000,"close":0.986000},{"time":1795535520,"open":0.984000,"high":0.991000,"low":0.980000,"close":0.990000},{"time":1795535580,"open":0.988000,"high":0.988000,"low":0.984000,"close":0.988000},{"time":1795535640,"open":0.987000,"high":0.993000,"low":0.986000,"close":0.991000},{"time":1795535700,"open":0.993000,"high":0.993000,"low":0.980000,"close":0.984000},{"time":1795535760,"open":0.986000,"high":0.987000,"low":0.976000,"close":0.983000},{"time":1795535820,"open":0.983000,"high":0.984000,"low":0.975000,"close":0.979000},{"time":1795535880,"open":0.980000,"high":0.984000,"low":0.977000,"close":0.980000},{"time":1795535940,"open":0.980000,"high":0.985000,"low":0.968000,"close":0.978000},{"time":1795536000,"open":0.978000,"high":0.985000,"low":0.976000,"close":0.985000},{"time":1795536060,"open":0.986000,"high":0.989000,"low":0.985000,"close":0.987000},{"time":1795536120,"open":0.985000,"high":0.986000,"low":0.980000,"close":0.983000},{"time":1795536180,"open":0.983000,"high":0.988000,"low":0.983000,"close":0.986000},{"time":1795536240,"open":0.986000,"high":0.989000,"low":0.986000,"close":0.987000},{"time":1795536300,"open":0.987000,"high":0.988000,"low":0.978000,"close":0.988000},{"time":1795536360,"open":0.986000,"high":0.989000,"low":0.981000,"close":0.983000},{"time":1795536420,"open":0.985000,"high":0.991000,"low":0.985000,"close":0.989000},{"time":1795536480,"open":0.991000,"high":0.995000,"low":0.989000,"close":0.993000},{"time":1795536540,"open":0.995000,"high":0.998000,"low":0.995000,"close":0.998000},{"time":1795536600,"open":0.998000,"high":1.002000,"low":0.996000,"close":1.002000},{"time":1795536660,"open":1.000000,"high":1.000000,"low":0.982000,"close":0.985000},{"time":1795536720,"open":0.984000,"high":0.989000,"low":0.984000,"close":0.985000},{"time":1795536780,"open":0.986000,"high":0.991000,"low":0.985000,"close":0.991000},{"time":1795536840,"open":0.991000,"high":1.002000,"low":0.991000,"close":0.996000},{"time":1795536900,"open":0.996000,"high":1.001000,"low":0.995000,"close":0.996000},{"time":1795536960,"open":0.998000,"high":1.002000,"low":0.996000,"close":0.997000},{"time":1795537020,"open":0.997000,"high":1.000000,"low":0.995000,"close":0.995000},{"time":1795537080,"open":0.995000,"high":1.000000,"low":0.994000,"close":0.996000},{"time":1795537140,"open":0.996000,"high":0.996000,"low":0.991000,"close":0.991000},{"time":1795537200,"open":0.991000,"high":0.993000,"low":0.987000,"close":0.988000},{"time":1795537260,"open":0.988000,"high":0.993000,"low":0.988000,"close":0.993000},{"time":1795537320,"open":0.990000,"high":0.992000,"low":0.989000,"close":0.990000},{"time":1795537380,"open":0.990000,"high":0.998000,"low":0.989000,"close":0.998000},{"time":1795537440,"open":0.998000,"high":1.000000,"low":0.997000,"close":0.997000},{"time":1795537500,"open":0.999000,"high":1.000000,"low":0.996000,"close":0.996000},{"time":1795537560,"open":0.995000,"high":0.997000,"low":0.991000,"close":0.991000},{"time":1795537620,"open":0.991000,"high":0.991000,"low":0.984000,"close":0.986000},{"time":1795537680,"open":0.989000,"high":0.998000,"low":0.987000,"close":0.994000},{"time":1795537740,"open":0.994000,"high":0.999000,"low":0.992000,"close":0.997000},{"time":1795537800,"open":1.000000,"high":1.002000,"low":0.997000,"close":0.999000},{"time":1795537860,"open":0.999000,"high":1.001000,"low":0.998000,"close":0.998000},{"time":1795537920,"open":0.999000,"high":1.001000,"low":0.998000,"close":0.998000},{"time":1795537980,"open":1.001000,"high":1.001000,"low":0.994000,"close":0.998000},{"time":1795538040,"open":0.998000,"high":1.004000,"low":0.998000,"close":1.001000},{"time":1795538100,"open":1.001000,"high":1.001000,"low":1.001000,"close":1.001000}];
+        const initialData5m  = [{"time":1795502400,"open":0.748000,"high":0.759000,"low":0.748000,"close":0.759000},{"time":1795502700,"open":0.758000,"high":0.761000,"low":0.757000,"close":0.758000},{"time":1795503000,"open":0.758000,"high":0.763000,"low":0.758000,"close":0.761000},{"time":1795503300,"open":0.760000,"high":0.764000,"low":0.760000,"close":0.760000},{"time":1795503600,"open":0.761000,"high":0.766000,"low":0.759000,"close":0.763000},{"time":1795503900,"open":0.763000,"high":0.773000,"low":0.763000,"close":0.771000},{"time":1795504200,"open":0.772000,"high":0.772000,"low":0.766000,"close":0.766000},{"time":1795504500,"open":0.766000,"high":0.768000,"low":0.764000,"close":0.764000},{"time":1795504800,"open":0.764000,"high":0.765000,"low":0.763000,"close":0.763000},{"time":1795505100,"open":0.765000,"high":0.765000,"low":0.763000,"close":0.763000},{"time":1795505400,"open":0.763000,"high":0.763000,"low":0.763000,"close":0.763000},{"time":1795505700,"open":0.764000,"high":0.764000,"low":0.761000,"close":0.761000},{"time":1795506000,"open":0.761000,"high":0.763000,"low":0.760000,"close":0.761000},{"time":1795506300,"open":0.761000,"high":0.765000,"low":0.761000,"close":0.762000},{"time":1795506600,"open":0.762000,"high":0.762000,"low":0.759000,"close":0.759000},{"time":1795506900,"open":0.761000,"high":0.761000,"low":0.759000,"close":0.759000},{"time":1795507200,"open":0.759000,"high":0.761000,"low":0.759000,"close":0.759000},{"time":1795507500,"open":0.759000,"high":0.760000,"low":0.758000,"close":0.760000},{"time":1795507800,"open":0.760000,"high":0.760000,"low":0.758000,"close":0.758000},{"time":1795508100,"open":0.758000,"high":0.760000,"low":0.756000,"close":0.756000},{"time":1795508400,"open":0.756000,"high":0.756000,"low":0.751000,"close":0.753000},{"time":1795508700,"open":0.753000,"high":0.753000,"low":0.745000,"close":0.745000},{"time":1795509000,"open":0.746000,"high":0.752000,"low":0.745000,"close":0.752000},{"time":1795509300,"open":0.754000,"high":0.754000,"low":0.751000,"close":0.752000},{"time":1795509600,"open":0.752000,"high":0.752000,"low":0.751000,"close":0.752000},{"time":1795509900,"open":0.751000,"high":0.752000,"low":0.748000,"close":0.749000},{"time":1795510200,"open":0.750000,"high":0.751000,"low":0.749000,"close":0.749000},{"time":1795510500,"open":0.749000,"high":0.752000,"low":0.748000,"close":0.750000},{"time":1795510800,"open":0.750000,"high":0.750000,"low":0.748000,"close":0.750000},{"time":1795511100,"open":0.748000,"high":0.750000,"low":0.748000,"close":0.748000},{"time":1795511400,"open":0.750000,"high":0.755000,"low":0.749000,"close":0.754000},{"time":1795511700,"open":0.754000,"high":0.754000,"low":0.749000,"close":0.750000},{"time":1795512000,"open":0.753000,"high":0.753000,"low":0.750000,"close":0.752000},{"time":1795512300,"open":0.750000,"high":0.751000,"low":0.749000,"close":0.749000},{"time":1795512600,"open":0.751000,"high":0.754000,"low":0.750000,"close":0.751000},{"time":1795512900,"open":0.751000,"high":0.753000,"low":0.750000,"close":0.753000},{"time":1795513200,"open":0.751000,"high":0.751000,"low":0.750000,"close":0.750000},{"time":1795513500,"open":0.750000,"high":0.753000,"low":0.750000,"close":0.751000},{"time":1795513800,"open":0.751000,"high":0.751000,"low":0.750000,"close":0.750000},{"time":1795514100,"open":0.750000,"high":0.750000,"low":0.750000,"close":0.750000},{"time":1795514400,"open":0.750000,"high":0.752000,"low":0.750000,"close":0.750000},{"time":1795514700,"open":0.750000,"high":0.752000,"low":0.750000,"close":0.750000},{"time":1795515000,"open":0.750000,"high":0.754000,"low":0.750000,"close":0.753000},{"time":1795515300,"open":0.755000,"high":0.796000,"low":0.755000,"close":0.795000},{"time":1795515600,"open":0.794000,"high":0.815000,"low":0.781000,"close":0.813000},{"time":1795515900,"open":0.814000,"high":0.850000,"low":0.808000,"close":0.838000},{"time":1795516200,"open":0.839000,"high":0.844000,"low":0.810000,"close":0.832000},{"time":1795516500,"open":0.828000,"high":0.841000,"low":0.810000,"close":0.810000},{"time":1795516800,"open":0.810000,"high":0.845000,"low":0.809000,"close":0.837000},{"time":1795517100,"open":0.841000,"high":0.915000,"low":0.838000,"close":0.882000},{"time":1795517400,"open":0.880000,"high":0.893000,"low":0.857000,"close":0.865000},{"time":1795517700,"open":0.864000,"high":0.908000,"low":0.860000,"close":0.901000},{"time":1795518000,"open":0.900000,"high":0.900000,"low":0.868000,"close":0.879000},{"time":1795518300,"open":0.879000,"high":0.885000,"low":0.851000,"close":0.851000},{"time":1795518600,"open":0.854000,"high":0.855000,"low":0.847000,"close":0.849000},{"time":1795518900,"open":0.851000,"high":0.914000,"low":0.849000,"close":0.912000},{"time":1795519200,"open":0.912000,"high":0.950000,"low":0.911000,"close":0.921000},{"time":1795519500,"open":0.922000,"high":0.931000,"low":0.901000,"close":0.925000},{"time":1795519800,"open":0.925000,"high":0.966000,"low":0.905000,"close":0.962000},{"time":1795520100,"open":0.962000,"high":0.980000,"low":0.954000,"close":0.980000},{"time":1795520400,"open":0.980000,"high":0.990000,"low":0.959000,"close":0.978000},{"time":1795520700,"open":0.977000,"high":1.060000,"low":0.974000,"close":1.023000},{"time":1795521000,"open":1.022000,"high":1.042000,"low":0.943000,"close":0.970000},{"time":1795521300,"open":0.970000,"high":1.025000,"low":0.965000,"close":1.014000},{"time":1795521600,"open":1.013000,"high":1.075000,"low":1.005000,"close":1.050000},{"time":1795521900,"open":1.049000,"high":1.057000,"low":1.023000,"close":1.050000},{"time":1795522200,"open":1.049000,"high":1.051000,"low":0.960000,"close":0.961000},{"time":1795522500,"open":0.964000,"high":1.019000,"low":0.951000,"close":1.016000},{"time":1795522800,"open":1.019000,"high":1.046000,"low":1.013000,"close":1.032000},{"time":1795523100,"open":1.032000,"high":1.036000,"low":1.017000,"close":1.029000},{"time":1795523400,"open":1.030000,"high":1.036000,"low":0.980000,"close":1.018000},{"time":1795523700,"open":1.016000,"high":1.037000,"low":0.975000,"close":1.005000},{"time":1795524000,"open":1.002000,"high":1.007000,"low":0.991000,"close":0.995000},{"time":1795524300,"open":0.994000,"high":0.998000,"low":0.932000,"close":0.957000},{"time":1795524600,"open":0.957000,"high":0.962000,"low":0.942000,"close":0.954000},{"time":1795524900,"open":0.952000,"high":0.979000,"low":0.926000,"close":0.979000},{"time":1795525200,"open":0.979000,"high":0.991000,"low":0.951000,"close":0.975000},{"time":1795525500,"open":0.975000,"high":1.000000,"low":0.973000,"close":0.995000},{"time":1795525800,"open":0.994000,"high":1.007000,"low":0.987000,"close":1.001000},{"time":1795526100,"open":0.999000,"high":1.000000,"low":0.968000,"close":0.974000},{"time":1795526400,"open":0.973000,"high":0.973000,"low":0.951000,"close":0.954000},{"time":1795526700,"open":0.955000,"high":0.962000,"low":0.941000,"close":0.960000},{"time":1795527000,"open":0.960000,"high":0.986000,"low":0.933000,"close":0.941000},{"time":1795527300,"open":0.942000,"high":0.953000,"low":0.939000,"close":0.946000},{"time":1795527600,"open":0.948000,"high":0.961000,"low":0.942000,"close":0.956000},{"time":1795527900,"open":0.956000,"high":0.975000,"low":0.952000,"close":0.962000},{"time":1795528200,"open":0.963000,"high":0.970000,"low":0.948000,"close":0.954000},{"time":1795528500,"open":0.954000,"high":0.958000,"low":0.929000,"close":0.940000},{"time":1795528800,"open":0.940000,"high":1.024000,"low":0.940000,"close":1.005000},{"time":1795529100,"open":1.001000,"high":1.020000,"low":0.999000,"close":1.004000},{"time":1795529400,"open":1.003000,"high":1.008000,"low":0.985000,"close":0.986000},{"time":1795529700,"open":0.986000,"high":1.016000,"low":0.983000,"close":1.015000},{"time":1795530000,"open":1.015000,"high":1.025000,"low":0.984000,"close":0.990000},{"time":1795530300,"open":0.989000,"high":0.996000,"low":0.982000,"close":0.992000},{"time":1795530600,"open":0.992000,"high":0.992000,"low":0.958000,"close":0.968000},{"time":1795530900,"open":0.969000,"high":0.974000,"low":0.953000,"close":0.969000},{"time":1795531200,"open":0.966000,"high":0.971000,"low":0.956000,"close":0.960000},{"time":1795531500,"open":0.961000,"high":0.990000,"low":0.960000,"close":0.989000},{"time":1795531800,"open":0.987000,"high":1.010000,"low":0.980000,"close":0.986000},{"time":1795532100,"open":0.984000,"high":1.005000,"low":0.979000,"close":0.985000},{"time":1795532400,"open":0.989000,"high":0.995000,"low":0.982000,"close":0.983000},{"time":1795532700,"open":0.986000,"high":1.026000,"low":0.982000,"close":1.023000},{"time":1795533000,"open":1.020000,"high":1.022000,"low":0.996000,"close":1.006000},{"time":1795533300,"open":1.007000,"high":1.009000,"low":0.980000,"close":1.002000},{"time":1795533600,"open":1.002000,"high":1.007000,"low":0.992000,"close":0.998000},{"time":1795533900,"open":0.995000,"high":1.003000,"low":0.982000,"close":1.002000},{"time":1795534200,"open":1.002000,"high":1.028000,"low":0.998000,"close":1.011000},{"time":1795534500,"open":1.013000,"high":1.013000,"low":0.982000,"close":0.984000},{"time":1795534800,"open":0.988000,"high":0.994000,"low":0.979000,"close":0.990000},{"time":1795535100,"open":0.990000,"high":0.990000,"low":0.948000,"close":0.950000},{"time":1795535400,"open":0.952000,"high":1.007000,"low":0.952000,"close":0.991000},{"time":1795535700,"open":0.993000,"high":0.993000,"low":0.968000,"close":0.978000},{"time":1795536000,"open":0.978000,"high":0.989000,"low":0.976000,"close":0.987000},{"time":1795536300,"open":0.987000,"high":0.998000,"low":0.978000,"close":0.998000},{"time":1795536600,"open":0.998000,"high":1.002000,"low":0.982000,"close":0.996000},{"time":1795536900,"open":0.996000,"high":1.002000,"low":0.991000,"close":0.991000},{"time":1795537200,"open":0.991000,"high":1.000000,"low":0.987000,"close":0.997000},{"time":1795537500,"open":0.999000,"high":1.000000,"low":0.984000,"close":0.997000},{"time":1795537800,"open":1.000000,"high":1.004000,"low":0.994000,"close":1.001000},{"time":1795538100,"open":1.001000,"high":1.001000,"low":1.001000,"close":1.001000}];
+        const initialData15m = [{"time":1795430700,"open":0.717000,"high":0.717000,"low":0.715000,"close":0.715000},{"time":1795431600,"open":0.715000,"high":0.718000,"low":0.713000,"close":0.718000},{"time":1795432500,"open":0.718000,"high":0.725000,"low":0.714000,"close":0.717000},{"time":1795433400,"open":0.718000,"high":0.723000,"low":0.717000,"close":0.719000},{"time":1795434300,"open":0.719000,"high":0.721000,"low":0.716000,"close":0.718000},{"time":1795435200,"open":0.716000,"high":0.719000,"low":0.715000,"close":0.718000},{"time":1795436100,"open":0.716000,"high":0.718000,"low":0.713000,"close":0.713000},{"time":1795437000,"open":0.713000,"high":0.715000,"low":0.712000,"close":0.713000},{"time":1795437900,"open":0.711000,"high":0.713000,"low":0.707000,"close":0.711000},{"time":1795438800,"open":0.711000,"high":0.712000,"low":0.708000,"close":0.709000},{"time":1795439700,"open":0.711000,"high":0.714000,"low":0.709000,"close":0.712000},{"time":1795440600,"open":0.710000,"high":0.713000,"low":0.710000,"close":0.710000},{"time":1795441500,"open":0.711000,"high":0.722000,"low":0.709000,"close":0.720000},{"time":1795442400,"open":0.718000,"high":0.720000,"low":0.707000,"close":0.714000},{"time":1795443300,"open":0.715000,"high":0.724000,"low":0.715000,"close":0.721000},{"time":1795444200,"open":0.720000,"high":0.721000,"low":0.714000,"close":0.717000},{"time":1795445100,"open":0.717000,"high":0.718000,"low":0.710000,"close":0.713000},{"time":1795446000,"open":0.712000,"high":0.718000,"low":0.710000,"close":0.712000},{"time":1795446900,"open":0.714000,"high":0.719000,"low":0.712000,"close":0.717000},{"time":1795447800,"open":0.717000,"high":0.720000,"low":0.716000,"close":0.717000},{"time":1795448700,"open":0.715000,"high":0.720000,"low":0.714000,"close":0.719000},{"time":1795449600,"open":0.719000,"high":0.719000,"low":0.715000,"close":0.718000},{"time":1795450500,"open":0.718000,"high":0.719000,"low":0.716000,"close":0.718000},{"time":1795451400,"open":0.718000,"high":0.718000,"low":0.714000,"close":0.717000},{"time":1795452300,"open":0.717000,"high":0.724000,"low":0.715000,"close":0.724000},{"time":1795453200,"open":0.724000,"high":0.726000,"low":0.719000,"close":0.721000},{"time":1795454100,"open":0.723000,"high":0.730000,"low":0.721000,"close":0.729000},{"time":1795455000,"open":0.728000,"high":0.753000,"low":0.727000,"close":0.729000},{"time":1795455900,"open":0.729000,"high":0.738000,"low":0.725000,"close":0.733000},{"time":1795456800,"open":0.733000,"high":0.733000,"low":0.724000,"close":0.728000},{"time":1795457700,"open":0.728000,"high":0.730000,"low":0.721000,"close":0.722000},{"time":1795458600,"open":0.722000,"high":0.730000,"low":0.722000,"close":0.728000},{"time":1795459500,"open":0.728000,"high":0.728000,"low":0.723000,"close":0.726000},{"time":1795460400,"open":0.728000,"high":0.731000,"low":0.725000,"close":0.726000},{"time":1795461300,"open":0.726000,"high":0.730000,"low":0.726000,"close":0.728000},{"time":1795462200,"open":0.728000,"high":0.731000,"low":0.727000,"close":0.729000},{"time":1795463100,"open":0.727000,"high":0.733000,"low":0.727000,"close":0.731000},{"time":1795464000,"open":0.731000,"high":0.759000,"low":0.729000,"close":0.759000},{"time":1795464900,"open":0.756000,"high":0.816000,"low":0.753000,"close":0.783000},{"time":1795465800,"open":0.784000,"high":0.785000,"low":0.749000,"close":0.752000},{"time":1795466700,"open":0.751000,"high":0.755000,"low":0.735000,"close":0.735000},{"time":1795467600,"open":0.737000,"high":0.767000,"low":0.732000,"close":0.732000},{"time":1795468500,"open":0.733000,"high":0.735000,"low":0.720000,"close":0.731000},{"time":1795469400,"open":0.732000,"high":0.739000,"low":0.728000,"close":0.739000},{"time":1795470300,"open":0.740000,"high":0.748000,"low":0.734000,"close":0.744000},{"time":1795471200,"open":0.742000,"high":0.743000,"low":0.727000,"close":0.729000},{"time":1795472100,"open":0.729000,"high":0.738000,"low":0.729000,"close":0.738000},{"time":1795473000,"open":0.738000,"high":0.738000,"low":0.731000,"close":0.731000},{"time":1795473900,"open":0.731000,"high":0.731000,"low":0.728000,"close":0.730000},{"time":1795474800,"open":0.729000,"high":0.737000,"low":0.729000,"close":0.729000},{"time":1795475700,"open":0.731000,"high":0.731000,"low":0.728000,"close":0.730000},{"time":1795476600,"open":0.732000,"high":0.749000,"low":0.730000,"close":0.740000},{"time":1795477500,"open":0.740000,"high":0.740000,"low":0.735000,"close":0.736000},{"time":1795478400,"open":0.736000,"high":0.746000,"low":0.736000,"close":0.741000},{"time":1795479300,"open":0.741000,"high":0.742000,"low":0.740000,"close":0.740000},{"time":1795480200,"open":0.740000,"high":0.741000,"low":0.737000,"close":0.741000},{"time":1795481100,"open":0.739000,"high":0.742000,"low":0.736000,"close":0.742000},{"time":1795482000,"open":0.740000,"high":0.741000,"low":0.732000,"close":0.734000},{"time":1795482900,"open":0.732000,"high":0.739000,"low":0.731000,"close":0.738000},{"time":1795483800,"open":0.739000,"high":0.739000,"low":0.737000,"close":0.739000},{"time":1795484700,"open":0.737000,"high":0.746000,"low":0.734000,"close":0.745000},{"time":1795485600,"open":0.744000,"high":0.748000,"low":0.740000,"close":0.741000},{"time":1795486500,"open":0.741000,"high":0.748000,"low":0.740000,"close":0.745000},{"time":1795487400,"open":0.747000,"high":0.747000,"low":0.740000,"close":0.740000},{"time":1795488300,"open":0.737000,"high":0.738000,"low":0.733000,"close":0.733000},{"time":1795489200,"open":0.735000,"high":0.738000,"low":0.733000,"close":0.735000},{"time":1795490100,"open":0.735000,"high":0.737000,"low":0.731000,"close":0.732000},{"time":1795491000,"open":0.733000,"high":0.735000,"low":0.732000,"close":0.732000},{"time":1795491900,"open":0.732000,"high":0.745000,"low":0.731000,"close":0.738000},{"time":1795492800,"open":0.737000,"high":0.744000,"low":0.737000,"close":0.740000},{"time":1795493700,"open":0.740000,"high":0.748000,"low":0.739000,"close":0.739000},{"time":1795494600,"open":0.739000,"high":0.739000,"low":0.736000,"close":0.736000},{"time":1795495500,"open":0.738000,"high":0.746000,"low":0.738000,"close":0.742000},{"time":1795496400,"open":0.742000,"high":0.748000,"low":0.736000,"close":0.739000},{"time":1795497300,"open":0.740000,"high":0.744000,"low":0.740000,"close":0.742000},{"time":1795498200,"open":0.742000,"high":0.756000,"low":0.742000,"close":0.753000},{"time":1795499100,"open":0.752000,"high":0.761000,"low":0.751000,"close":0.758000},{"time":1795500000,"open":0.758000,"high":0.758000,"low":0.746000,"close":0.747000},{"time":1795500900,"open":0.749000,"high":0.749000,"low":0.739000,"close":0.741000},{"time":1795501800,"open":0.741000,"high":0.759000,"low":0.739000,"close":0.759000},{"time":1795502700,"open":0.758000,"high":0.764000,"low":0.757000,"close":0.760000},{"time":1795503600,"open":0.761000,"high":0.773000,"low":0.759000,"close":0.766000},{"time":1795504500,"open":0.766000,"high":0.768000,"low":0.763000,"close":0.763000},{"time":1795505400,"open":0.763000,"high":0.764000,"low":0.760000,"close":0.761000},{"time":1795506300,"open":0.761000,"high":0.765000,"low":0.759000,"close":0.759000},{"time":1795507200,"open":0.759000,"high":0.761000,"low":0.758000,"close":0.758000},{"time":1795508100,"open":0.758000,"high":0.760000,"low":0.745000,"close":0.745000},{"time":1795509000,"open":0.746000,"high":0.754000,"low":0.745000,"close":0.752000},{"time":1795509900,"open":0.751000,"high":0.752000,"low":0.748000,"close":0.750000},{"time":1795510800,"open":0.750000,"high":0.755000,"low":0.748000,"close":0.754000},{"time":1795511700,"open":0.754000,"high":0.754000,"low":0.749000,"close":0.749000},{"time":1795512600,"open":0.751000,"high":0.754000,"low":0.750000,"close":0.750000},{"time":1795513500,"open":0.750000,"high":0.753000,"low":0.750000,"close":0.750000},{"time":1795514400,"open":0.750000,"high":0.754000,"low":0.750000,"close":0.753000},{"time":1795515300,"open":0.755000,"high":0.850000,"low":0.755000,"close":0.838000},{"time":1795516200,"open":0.839000,"high":0.845000,"low":0.809000,"close":0.837000},{"time":1795517100,"open":0.841000,"high":0.915000,"low":0.838000,"close":0.901000},{"time":1795518000,"open":0.900000,"high":0.900000,"low":0.847000,"close":0.849000},{"time":1795518900,"open":0.851000,"high":0.950000,"low":0.849000,"close":0.925000},{"time":1795519800,"open":0.925000,"high":0.990000,"low":0.905000,"close":0.978000},{"time":1795520700,"open":0.977000,"high":1.060000,"low":0.943000,"close":1.014000},{"time":1795521600,"open":1.013000,"high":1.075000,"low":0.960000,"close":0.961000},{"time":1795522500,"open":0.964000,"high":1.046000,"low":0.951000,"close":1.029000},{"time":1795523400,"open":1.030000,"high":1.037000,"low":0.975000,"close":0.995000},{"time":1795524300,"open":0.994000,"high":0.998000,"low":0.926000,"close":0.979000},{"time":1795525200,"open":0.979000,"high":1.007000,"low":0.951000,"close":1.001000},{"time":1795526100,"open":0.999000,"high":1.000000,"low":0.941000,"close":0.960000},{"time":1795527000,"open":0.960000,"high":0.986000,"low":0.933000,"close":0.956000},{"time":1795527900,"open":0.956000,"high":0.975000,"low":0.929000,"close":0.940000},{"time":1795528800,"open":0.940000,"high":1.024000,"low":0.940000,"close":0.986000},{"time":1795529700,"open":0.986000,"high":1.025000,"low":0.982000,"close":0.992000},{"time":1795530600,"open":0.992000,"high":0.992000,"low":0.953000,"close":0.960000},{"time":1795531500,"open":0.961000,"high":1.010000,"low":0.960000,"close":0.985000},{"time":1795532400,"open":0.989000,"high":1.026000,"low":0.982000,"close":1.006000},{"time":1795533300,"open":1.007000,"high":1.009000,"low":0.980000,"close":1.002000},{"time":1795534200,"open":1.002000,"high":1.028000,"low":0.979000,"close":0.990000},{"time":1795535100,"open":0.990000,"high":1.007000,"low":0.948000,"close":0.978000},{"time":1795536000,"open":0.978000,"high":1.002000,"low":0.976000,"close":0.996000},{"time":1795536900,"open":0.996000,"high":1.002000,"low":0.984000,"close":0.997000},{"time":1795537800,"open":1.000000,"high":1.004000,"low":0.994000,"close":1.001000}];
+        const initialData1h  = [{"time":1795107600,"open":0.715000,"high":0.720000,"low":0.703000,"close":0.719000},{"time":1795111200,"open":0.718000,"high":0.722000,"low":0.714000,"close":0.722000},{"time":1795114800,"open":0.720000,"high":0.721000,"low":0.712000,"close":0.713000},{"time":1795118400,"open":0.712000,"high":0.712000,"low":0.700000,"close":0.706000},{"time":1795122000,"open":0.706000,"high":0.708000,"low":0.699000,"close":0.703000},{"time":1795125600,"open":0.703000,"high":0.705000,"low":0.702000,"close":0.705000},{"time":1795129200,"open":0.705000,"high":0.709000,"low":0.696000,"close":0.701000},{"time":1795132800,"open":0.701000,"high":0.703000,"low":0.698000,"close":0.701000},{"time":1795136400,"open":0.700000,"high":0.706000,"low":0.696000,"close":0.698000},{"time":1795140000,"open":0.696000,"high":0.699000,"low":0.693000,"close":0.695000},{"time":1795143600,"open":0.695000,"high":0.700000,"low":0.693000,"close":0.695000},{"time":1795147200,"open":0.694000,"high":0.701000,"low":0.694000,"close":0.701000},{"time":1795150800,"open":0.699000,"high":0.701000,"low":0.696000,"close":0.700000},{"time":1795154400,"open":0.700000,"high":0.700000,"low":0.694000,"close":0.696000},{"time":1795158000,"open":0.696000,"high":0.698000,"low":0.693000,"close":0.698000},{"time":1795161600,"open":0.696000,"high":0.704000,"low":0.696000,"close":0.702000},{"time":1795165200,"open":0.702000,"high":0.705000,"low":0.700000,"close":0.700000},{"time":1795168800,"open":0.701000,"high":0.707000,"low":0.699000,"close":0.706000},{"time":1795172400,"open":0.706000,"high":0.711000,"low":0.702000,"close":0.707000},{"time":1795176000,"open":0.707000,"high":0.709000,"low":0.696000,"close":0.703000},{"time":1795179600,"open":0.705000,"high":0.710000,"low":0.696000,"close":0.703000},{"time":1795183200,"open":0.703000,"high":0.707000,"low":0.696000,"close":0.700000},{"time":1795186800,"open":0.700000,"high":0.703000,"low":0.671000,"close":0.676000},{"time":1795190400,"open":0.676000,"high":0.684000,"low":0.670000,"close":0.679000},{"time":1795194000,"open":0.679000,"high":0.679000,"low":0.669000,"close":0.676000},{"time":1795197600,"open":0.677000,"high":0.682000,"low":0.672000,"close":0.677000},{"time":1795201200,"open":0.677000,"high":0.678000,"low":0.667000,"close":0.674000},{"time":1795204800,"open":0.672000,"high":0.674000,"low":0.666000,"close":0.668000},{"time":1795208400,"open":0.666000,"high":0.682000,"low":0.666000,"close":0.677000},{"time":1795212000,"open":0.677000,"high":0.686000,"low":0.677000,"close":0.686000},{"time":1795215600,"open":0.686000,"high":0.688000,"low":0.681000,"close":0.681000},{"time":1795219200,"open":0.683000,"high":0.683000,"low":0.679000,"close":0.679000},{"time":1795222800,"open":0.681000,"high":0.682000,"low":0.670000,"close":0.672000},{"time":1795226400,"open":0.670000,"high":0.674000,"low":0.670000,"close":0.672000},{"time":1795230000,"open":0.672000,"high":0.673000,"low":0.651000,"close":0.658000},{"time":1795233600,"open":0.658000,"high":0.661000,"low":0.646000,"close":0.654000},{"time":1795237200,"open":0.654000,"high":0.659000,"low":0.652000,"close":0.657000},{"time":1795240800,"open":0.657000,"high":0.675000,"low":0.648000,"close":0.668000},{"time":1795244400,"open":0.667000,"high":0.688000,"low":0.662000,"close":0.671000},{"time":1795248000,"open":0.670000,"high":0.672000,"low":0.658000,"close":0.664000},{"time":1795251600,"open":0.663000,"high":0.672000,"low":0.660000,"close":0.666000},{"time":1795255200,"open":0.666000,"high":0.672000,"low":0.661000,"close":0.668000},{"time":1795258800,"open":0.667000,"high":0.693000,"low":0.665000,"close":0.686000},{"time":1795262400,"open":0.685000,"high":0.696000,"low":0.677000,"close":0.678000},{"time":1795266000,"open":0.680000,"high":0.692000,"low":0.678000,"close":0.684000},{"time":1795269600,"open":0.686000,"high":0.688000,"low":0.680000,"close":0.686000},{"time":1795273200,"open":0.684000,"high":0.686000,"low":0.680000,"close":0.685000},{"time":1795276800,"open":0.685000,"high":0.686000,"low":0.681000,"close":0.681000},{"time":1795280400,"open":0.683000,"high":0.705000,"low":0.682000,"close":0.704000},{"time":1795284000,"open":0.704000,"high":0.710000,"low":0.689000,"close":0.690000},{"time":1795287600,"open":0.692000,"high":0.735000,"low":0.689000,"close":0.690000},{"time":1795291200,"open":0.693000,"high":0.693000,"low":0.681000,"close":0.689000},{"time":1795294800,"open":0.690000,"high":0.692000,"low":0.684000,"close":0.688000},{"time":1795298400,"open":0.688000,"high":0.688000,"low":0.682000,"close":0.686000},{"time":1795302000,"open":0.686000,"high":0.687000,"low":0.680000,"close":0.685000},{"time":1795305600,"open":0.683000,"high":0.695000,"low":0.682000,"close":0.690000},{"time":1795309200,"open":0.690000,"high":0.697000,"low":0.688000,"close":0.690000},{"time":1795312800,"open":0.692000,"high":0.705000,"low":0.689000,"close":0.700000},{"time":1795316400,"open":0.700000,"high":0.744000,"low":0.681000,"close":0.683000},{"time":1795320000,"open":0.683000,"high":0.688000,"low":0.681000,"close":0.688000},{"time":1795323600,"open":0.688000,"high":0.692000,"low":0.685000,"close":0.685000},{"time":1795327200,"open":0.687000,"high":0.690000,"low":0.682000,"close":0.683000},{"time":1795330800,"open":0.685000,"high":0.690000,"low":0.681000,"close":0.690000},{"time":1795334400,"open":0.688000,"high":0.690000,"low":0.685000,"close":0.690000},{"time":1795338000,"open":0.690000,"high":0.695000,"low":0.688000,"close":0.695000},{"time":1795341600,"open":0.694000,"high":0.695000,"low":0.684000,"close":0.687000},{"time":1795345200,"open":0.689000,"high":0.690000,"low":0.686000,"close":0.689000},{"time":1795348800,"open":0.689000,"high":0.690000,"low":0.684000,"close":0.686000},{"time":1795352400,"open":0.688000,"high":0.690000,"low":0.685000,"close":0.687000},{"time":1795356000,"open":0.685000,"high":0.687000,"low":0.684000,"close":0.687000},{"time":1795359600,"open":0.687000,"high":0.730000,"low":0.685000,"close":0.708000},{"time":1795363200,"open":0.708000,"high":0.730000,"low":0.690000,"close":0.692000},{"time":1795366800,"open":0.692000,"high":0.718000,"low":0.691000,"close":0.696000},{"time":1795370400,"open":0.698000,"high":0.703000,"low":0.692000,"close":0.700000},{"time":1795374000,"open":0.701000,"high":0.703000,"low":0.696000,"close":0.700000},{"time":1795377600,"open":0.700000,"high":0.703000,"low":0.692000,"close":0.693000},{"time":1795381200,"open":0.695000,"high":0.704000,"low":0.693000,"close":0.696000},{"time":1795384800,"open":0.696000,"high":0.707000,"low":0.695000,"close":0.704000},{"time":1795388400,"open":0.704000,"high":0.708000,"low":0.704000,"close":0.704000},{"time":1795392000,"open":0.704000,"high":0.710000,"low":0.703000,"close":0.708000},{"time":1795395600,"open":0.708000,"high":0.710000,"low":0.708000,"close":0.708000},{"time":1795399200,"open":0.708000,"high":0.714000,"low":0.708000,"close":0.708000},{"time":1795402800,"open":0.708000,"high":0.715000,"low":0.708000,"close":0.712000},{"time":1795406400,"open":0.712000,"high":0.715000,"low":0.712000,"close":0.712000},{"time":1795410000,"open":0.712000,"high":0.717000,"low":0.712000,"close":0.715000},{"time":1795413600,"open":0.717000,"high":0.717000,"low":0.712000,"close":0.714000},{"time":1795417200,"open":0.712000,"high":0.718000,"low":0.712000,"close":0.713000},{"time":1795420800,"open":0.716000,"high":0.717000,"low":0.713000,"close":0.714000},{"time":1795424400,"open":0.714000,"high":0.723000,"low":0.711000,"close":0.714000},{"time":1795428000,"open":0.712000,"high":0.719000,"low":0.711000,"close":0.715000},{"time":1795431600,"open":0.715000,"high":0.725000,"low":0.713000,"close":0.718000},{"time":1795435200,"open":0.716000,"high":0.719000,"low":0.707000,"close":0.711000},{"time":1795438800,"open":0.711000,"high":0.722000,"low":0.708000,"close":0.720000},{"time":1795442400,"open":0.718000,"high":0.724000,"low":0.707000,"close":0.713000},{"time":1795446000,"open":0.712000,"high":0.720000,"low":0.710000,"close":0.719000},{"time":1795449600,"open":0.719000,"high":0.724000,"low":0.714000,"close":0.724000},{"time":1795453200,"open":0.724000,"high":0.753000,"low":0.719000,"close":0.733000},{"time":1795456800,"open":0.733000,"high":0.733000,"low":0.721000,"close":0.726000},{"time":1795460400,"open":0.728000,"high":0.733000,"low":0.725000,"close":0.731000},{"time":1795464000,"open":0.731000,"high":0.816000,"low":0.729000,"close":0.735000},{"time":1795467600,"open":0.737000,"high":0.767000,"low":0.720000,"close":0.744000},{"time":1795471200,"open":0.742000,"high":0.743000,"low":0.727000,"close":0.730000},{"time":1795474800,"open":0.729000,"high":0.749000,"low":0.728000,"close":0.736000},{"time":1795478400,"open":0.736000,"high":0.746000,"low":0.736000,"close":0.742000},{"time":1795482000,"open":0.740000,"high":0.746000,"low":0.731000,"close":0.745000},{"time":1795485600,"open":0.744000,"high":0.748000,"low":0.733000,"close":0.733000},{"time":1795489200,"open":0.735000,"high":0.745000,"low":0.731000,"close":0.738000},{"time":1795492800,"open":0.737000,"high":0.748000,"low":0.736000,"close":0.742000},{"time":1795496400,"open":0.742000,"high":0.761000,"low":0.736000,"close":0.758000},{"time":1795500000,"open":0.758000,"high":0.764000,"low":0.739000,"close":0.760000},{"time":1795503600,"open":0.761000,"high":0.773000,"low":0.759000,"close":0.759000},{"time":1795507200,"open":0.759000,"high":0.761000,"low":0.745000,"close":0.750000},{"time":1795510800,"open":0.750000,"high":0.755000,"low":0.748000,"close":0.750000},{"time":1795514400,"open":0.750000,"high":0.915000,"low":0.750000,"close":0.901000},{"time":1795518000,"open":0.900000,"high":1.060000,"low":0.847000,"close":1.014000},{"time":1795521600,"open":1.013000,"high":1.075000,"low":0.926000,"close":0.979000},{"time":1795525200,"open":0.979000,"high":1.007000,"low":0.929000,"close":0.940000},{"time":1795528800,"open":0.940000,"high":1.025000,"low":0.940000,"close":0.985000},{"time":1795532400,"open":0.989000,"high":1.028000,"low":0.948000,"close":0.978000},{"time":1795536000,"open":0.978000,"high":1.004000,"low":0.976000,"close":1.001000}];
+
+        const candlesCache = {
+            '1m': initialData1m.map(c => ({ timeSeconds: c.time, ...c })),
+            '5m': initialData5m.map(c => ({ timeSeconds: c.time, ...c })),
+            '15m': initialData15m.map(c => ({ timeSeconds: c.time, ...c })),
+            '1h': initialData1h.map(c => ({ timeSeconds: c.time, ...c }))
+        };
+
+        const concludedTrades = { '1m': null, '5m': null, '15m': null, '1h': null };
+
+        function formatPrice(p) {
+            if (p === undefined || isNaN(p)) return '0.00';
+            if (p >= 1000) return p.toFixed(2);
+            if (p >= 1) return p.toFixed(4);
+            if (p >= 0.01) return p.toFixed(6);
+            return p.toFixed(8);
+        }
+
+        // Render Top Movers strip
+        function renderMoversBar() {
+            const container = document.getElementById('movers-pills-container');
+            if (!container) return;
+            container.innerHTML = '';
+            topMoversList.forEach(m => {
+                const btn = document.createElement('button');
+                btn.className = 'mover-btn ' + (m.symbol === currentSymbol ? 'active' : '');
+                const sign = m.chg >= 0 ? '+' : '';
+                const chgCls = m.chg >= 0 ? 'mover-chg-up' : 'mover-chg-down';
+                btn.innerHTML = '<span>' + m.symbol.replace('USDT', '') + '</span><span class="' + chgCls + '">' + sign + m.chg.toFixed(1) + '%</span>';
+                btn.onclick = () => switchCoin(m.symbol);
+                container.appendChild(btn);
+            });
+        }
+        renderMoversBar();
+
+        function getShortBadge(name) {
+            if (name.includes('Absorption')) return 'ABS';
+            if (name.includes('Breakout')) return 'BO';
+            if (name.includes('Momentum')) return 'MOM';
+            if (name.includes('Engulfing')) return 'ENG';
+            if (name.includes('Star')) return 'STAR';
+            if (name.includes('Hammer')) return 'HAM';
+            if (name.includes('Shooting')) return 'STAR';
+            return name.length > 4 ? name.substring(0, 4).toUpperCase() : name;
+        }
+
+        function checkIsTradeConcluded(plan, candles, price) {
+            if (!plan) return 'NO_PLAN';
+
+            if (candles && candles.length > 0) {
+                let alertIdx = -1;
+                if (plan.timeSeconds) {
+                    alertIdx = candles.findIndex(c => c.timeSeconds === plan.timeSeconds);
+                }
+                const start = alertIdx !== -1 ? alertIdx : Math.max(0, candles.length - 4);
+
+                for (let i = start; i < candles.length; i++) {
+                    const c = candles[i];
+                    if (plan.isBullish) {
+                        if (c.low <= plan.stopLoss) return 'SL_HIT';
+                        if (c.high >= plan.tp1) return 'TP_HIT';
+                    } else {
+                        if (c.high >= plan.stopLoss) return 'SL_HIT';
+                        if (c.low <= plan.tp1) return 'TP_HIT';
+                    }
+                }
+            }
+
+            if (price > 0) {
+                if (plan.isBullish) {
+                    if (price <= plan.stopLoss) return 'SL_HIT';
+                    if (price >= plan.tp1) return 'TP_HIT';
+                } else {
+                    if (price >= plan.stopLoss) return 'SL_HIT';
+                    if (price <= plan.tp1) return 'TP_HIT';
+                }
+            }
+
+            return null;
+        }
+
+        // Strict Multi-Factor Confluence Engine in Browser (4 Pillars)
+        function detectPatternsClient(tf, candles, deltaObj, obObj) {
+            const alerts = [];
+            if (!candles || candles.length < 20) return alerts;
+            let lastMatchedIndex = -10;
+
+            function getVolSma(endIdx, period) {
+                let sum = 0, count = 0;
+                for (let k = Math.max(0, endIdx - period + 1); k <= endIdx; k++) {
+                    sum += candles[k].volume; count++;
+                }
+                return count > 0 ? sum / count : (candles[endIdx].volume || 1);
+            }
+
+            function getSma(endIdx, period) {
+                let sum = 0, count = 0;
+                for (let k = Math.max(0, endIdx - period + 1); k <= endIdx; k++) {
+                    sum += candles[k].close; count++;
+                }
+                return count > 0 ? sum / count : candles[endIdx].close;
+            }
+
+            function getAtr(endIdx, period) {
+                let trSum = 0, count = 0;
+                for (let k = Math.max(1, endIdx - period + 1); k <= endIdx; k++) {
+                    const curr = candles[k], prev = candles[k - 1];
+                    const tr = Math.max(curr.high - curr.low, Math.max(Math.abs(curr.high - prev.close), Math.abs(curr.low - prev.close)));
+                    trSum += tr; count++;
+                }
+                return count > 0 ? trSum / count : 1.0;
+            }
+
+            function lowestLow(endIdx, lookback) {
+                let min = Infinity;
+                const start = Math.max(0, endIdx - lookback);
+                for (let k = start; k < endIdx; k++) { min = Math.min(min, candles[k].low); }
+                return min;
+            }
+
+            function highestHigh(endIdx, lookback) {
+                let max = -Infinity;
+                const start = Math.max(0, endIdx - lookback);
+                for (let k = start; k < endIdx; k++) { max = Math.max(max, candles[k].high); }
+                return max;
+            }
+
+            const buyRatio = deltaObj ? deltaObj.buyRatioPct : 50;
+            const obiVal = obObj ? obObj.imbalancePct : 0;
+
+            const deltaBullScore = buyRatio >= 62 ? 95 : (buyRatio >= 53 ? 75 : (buyRatio >= 47 ? 50 : 15));
+            const deltaBearScore = buyRatio <= 38 ? 95 : (buyRatio <= 47 ? 75 : (buyRatio <= 53 ? 50 : 15));
+
+            const obBullScore = obiVal >= 20 ? 95 : (obiVal >= 8 ? 75 : (obiVal <= -20 ? 15 : 50));
+            const obBearScore = obiVal <= -20 ? 95 : (obiVal <= -8 ? 75 : (obiVal >= 20 ? 15 : 50));
+
+            for (let i = 8; i < candles.length; i++) {
+                const c0 = candles[i], c1 = candles[i - 1], c2 = candles[i - 2];
+                const atr = getAtr(i, 14);
+                const sma = getSma(i - 1, 7);
+                const volSma = getVolSma(i - 1, 20);
+                const rvol = c0.volume / Math.max(volSma, 0.001);
+
+                const isDowntrend = c1.close < sma && c2.close < sma;
+                const isUptrend   = c1.close > sma && c2.close > sma;
+
+                const volScore = rvol >= 2.2 ? 95 : (rvol >= 1.5 ? 80 : (rvol >= 1.0 ? 55 : 20));
+
+                const c0LowerWick = Math.min(c0.open, c0.close) - c0.low;
+                const c0UpperWick = c0.high - Math.max(c0.open, c0.close);
+                const c0Body = Math.abs(c0.close - c0.open);
+                const c1Body = Math.abs(c1.close - c1.open);
+                const c0Bull = c0.close > c0.open;
+
+                const isLowerWickSweep = c0LowerWick >= 1.5 * c0Body && c0Bull && c0.low <= lowestLow(i, 5);
+                const isUpperWickSweep = c0UpperWick >= 1.5 * c0Body && !c0Bull && c0.high >= highestHigh(i, 5);
+
+                const isBullEngulf = isDowntrend && !candles[i-1].isBullish && c0Bull && c0Body >= 1.25 * c1Body;
+                const isBearEngulf = isUptrend && candles[i-1].isBullish && !c0Bull && c0Body >= 1.25 * c1Body;
+
+                const isMorningStar = isDowntrend && c2.close < c2.open && c1Body <= 0.35 * atr && c0Bull && c0.close > (c2.open + c2.close) / 2;
+                const isEveningStar = isUptrend && c2.close > c2.open && c1Body <= 0.35 * atr && !c0Bull && c0.close < (c2.open + c2.close) / 2;
+
+                const paBullScore = (isLowerWickSweep || isBullEngulf || isMorningStar) ? 85 : (c0Bull ? 65 : 35);
+                const paBearScore = (isUpperWickSweep || isBearEngulf || isEveningStar) ? 85 : (!c0Bull ? 65 : 35);
+
+                let totalBull = Math.round(0.35 * deltaBullScore + 0.25 * obBullScore + 0.25 * volScore + 0.15 * paBullScore);
+                let totalBear = Math.round(0.35 * deltaBearScore + 0.25 * obBearScore + 0.25 * volScore + 0.15 * paBearScore);
+
+                // Strict Vetoes
+                if (deltaBullScore <= 20 || obBullScore <= 20 || volScore <= 25) totalBull = 40;
+                if (deltaBearScore <= 20 || obBearScore <= 20 || volScore <= 25) totalBear = 40;
+
+                const candidates = [];
+
+                if (totalBull >= 70) {
+                    let name = 'Order Flow Long';
+                    let desc = 'Multi-factor buy flow with volume expansion';
+                    if (isLowerWickSweep && deltaBullScore >= 75) {
+                        name = 'Institutional Delta Absorption';
+                        desc = 'Passive limit buyers absorbed aggressive sell dump at swing floor with positive delta flip';
+                    } else if (volScore >= 80 && obBullScore >= 80) {
+                        name = 'Order Book Liquidity Breakout';
+                        desc = 'High RVol volume surge supported by dense bid book wall defense';
+                    } else if (deltaBullScore >= 80 && volScore >= 75) {
+                        name = 'CVD Momentum Drive';
+                        desc = 'Aggressive market taker buyers pushing price through resistance with heavy delta';
+                    } else if (isBullEngulf) {
+                        name = 'Bullish Engulfing';
+                        desc = 'Engulfing green body confirmed by institutional volume & delta alignment';
+                    } else if (isMorningStar) {
+                        name = 'Morning Star';
+                        desc = 'Reversal from low confirmed by positive delta and book defense';
+                    }
+                    candidates.push({ name, isBullish: true, score: totalBull, desc });
+                }
+
+                if (totalBear >= 70) {
+                    let name = 'Order Flow Short';
+                    let desc = 'Multi-factor selling pressure with book defense';
+                    if (isUpperWickSweep && deltaBearScore >= 75) {
+                        name = 'Institutional Delta Absorption';
+                        desc = 'Passive limit sellers absorbed aggressive buyer push at peak with negative delta dump';
+                    } else if (volScore >= 80 && obBearScore >= 80) {
+                        name = 'Order Book Liquidity Breakout';
+                        desc = 'High RVol volume breakdown capped by dense ask book wall resistance';
+                    } else if (deltaBearScore >= 80 && volScore >= 75) {
+                        name = 'CVD Momentum Drive';
+                        desc = 'Aggressive market taker sellers hitting bids with strong negative delta drive';
+                    } else if (isBearEngulf) {
+                        name = 'Bearish Engulfing';
+                        desc = 'Sellers engulfed green bar confirmed by institutional volume & negative delta';
+                    } else if (isEveningStar) {
+                        name = 'Evening Star';
+                        desc = 'Peak exhaustion confirmed by aggressive seller delta';
+                    }
+                    candidates.push({ name, isBullish: false, score: totalBear, desc });
+                }
+
+                if (candidates.length > 0) {
+                    candidates.sort((a, b) => b.score - a.score);
+                    const best = candidates[0];
+                    if (i - lastMatchedIndex >= 4) {
+                        const dateObj = new Date(c0.timeSeconds * 1000);
+                        const timeStr = dateObj.toTimeString().split(' ')[0];
+                        alerts.push({
+                            timeframe: tf,
+                            patternName: best.name,
+                            isBullish: best.isBullish,
+                            timeSeconds: c0.timeSeconds,
+                            timeStr: timeStr,
+                            price: c0.close,
+                            confidenceScore: best.score,
+                            justification: best.desc
+                        });
+                        lastMatchedIndex = i;
+                    }
+                }
+            }
+            return alerts;
+        }
+
+        function calculateTradePlanClient(tf, candles, alerts) {
+            if (!alerts || alerts.length === 0 || !candles || candles.length === 0) return null;
+            const lastAlert = alerts[alerts.length - 1];
+
+            let alertIdx = candles.findIndex(c => c.timeSeconds === lastAlert.timeSeconds);
+            if (alertIdx === -1) alertIdx = candles.length - 1;
+
+            const lookback = Math.max(0, alertIdx - 3);
+            let minLow = Infinity, maxHigh = -Infinity;
+            for (let k = lookback; k <= alertIdx; k++) {
+                minLow = Math.min(minLow, candles[k].low);
+                maxHigh = Math.max(maxHigh, candles[k].high);
+            }
+
+            const entry = lastAlert.price;
+            const isBullish = lastAlert.isBullish;
+            let stopLoss, tp1, tp2, risk;
+
+            if (isBullish) {
+                stopLoss = minLow * 0.9997;
+                risk = Math.max(entry - stopLoss, entry * 0.001);
+                tp1 = entry + 1.5 * risk;
+                tp2 = entry + 2.5 * risk;
+            } else {
+                stopLoss = maxHigh * 1.0003;
+                risk = Math.max(stopLoss - entry, entry * 0.001);
+                tp1 = entry - 1.5 * risk;
+                tp2 = entry - 2.5 * risk;
+            }
+
+            const dateObj = new Date(lastAlert.timeSeconds * 1000);
+            const timeStr = dateObj.toTimeString().split(' ')[0];
+
+            return {
+                pattern: lastAlert.patternName,
+                isBullish: isBullish,
+                entry: entry,
+                stopLoss: stopLoss,
+                tp1: tp1,
+                tp2: tp2,
+                risk: risk,
+                time: timeStr,
+                timeSeconds: lastAlert.timeSeconds,
+                confluenceScore: lastAlert.confidenceScore
+            };
+        }
+
+        function createEngineChart(containerId, hudPrefix, tfKey, data, markers) {
+            const container = document.getElementById(containerId);
+            const chart = LightweightCharts.createChart(container, {
+                layout: { background: { color: '#131722' }, textColor: '#8e96aa' },
+                grid: { vertLines: { color: '#181d2a' }, horzLines: { color: '#181d2a' } },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                rightPriceScale: { borderColor: '#202636' },
+                timeScale: { borderColor: '#202636', timeVisible: true, secondsVisible: false }
+            });
+
+            const candleSeries = chart.addCandlestickSeries({
+                upColor: '#089981', downColor: '#f23645',
+                borderVisible: false,
+                wickUpColor: '#089981', wickDownColor: '#f23645'
+            });
+            candleSeries.setData(data);
+            if (markers && markers.length > 0) {
+                candleSeries.setMarkers(markers);
+            }
+
+            const wrapper = { chart, candleSeries, container, tfKey, priceLines: [] };
+            chart.timeScale().fitContent();
+
+            // Crosshair Hover
+            chart.subscribeCrosshairMove(param => {
+                if (!param.time || !param.seriesData.get(candleSeries)) return;
+                const candle = param.seriesData.get(candleSeries);
+                document.getElementById('o-' + hudPrefix).innerText = formatPrice(candle.open);
+                document.getElementById('h-' + hudPrefix).innerText = formatPrice(candle.high);
+                document.getElementById('l-' + hudPrefix).innerText = formatPrice(candle.low);
+                document.getElementById('c-' + hudPrefix).innerText = formatPrice(candle.close);
+
+                const patElem = document.getElementById('pat-' + hudPrefix);
+                const lookupKey = tfKey + '_' + param.time;
+                if (alertDetails[lookupKey]) {
+                    const info = alertDetails[lookupKey];
+                    patElem.style.display = 'inline';
+                    patElem.style.color = info.bullish ? '#00e676' : '#ff1744';
+                    patElem.innerText = '★ ' + info.name + ' (' + info.score + '/100) - ' + info.desc;
+                } else {
+                    patElem.style.display = 'none';
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+            });
+
+            return wrapper;
+        }
+
+        function clearPriceLines(wrapper) {
+            if (wrapper.priceLines && wrapper.priceLines.length > 0) {
+                wrapper.priceLines.forEach(line => {
+                    try { wrapper.candleSeries.removePriceLine(line); } catch(e){}
+                });
+                wrapper.priceLines = [];
+            }
+        }
+
+        function drawPriceLines(wrapper, plan) {
+            clearPriceLines(wrapper);
+            if (!plan) return;
+
+            const lEntry = wrapper.candleSeries.createPriceLine({
+                price: plan.entry, color: '#2962ff', lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Solid, axisLabelVisible: true,
+                title: 'ENTRY $' + formatPrice(plan.entry)
+            });
+            const lSL = wrapper.candleSeries.createPriceLine({
+                price: plan.stopLoss, color: '#f23645', lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+                title: (plan.isBullish ? 'SUPPORT / SL $' : 'RESISTANCE / SL $') + formatPrice(plan.stopLoss)
+            });
+            const lTP1 = wrapper.candleSeries.createPriceLine({
+                price: plan.tp1, color: '#089981', lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+                title: 'TP1 (1.5R) $' + formatPrice(plan.tp1)
+            });
+            const lTP2 = wrapper.candleSeries.createPriceLine({
+                price: plan.tp2, color: '#00e676', lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true,
+                title: 'TP2 (2.5R) $' + formatPrice(plan.tp2)
+            });
+
+            wrapper.priceLines = [lEntry, lSL, lTP1, lTP2];
+        }
+
+        function updateTradePlanUI(tfKey, wrapper, plan, price) {
+            const badge = document.getElementById('badge-' + tfKey);
+            const desc  = document.getElementById('plan-desc-' + tfKey);
+            const pnl   = document.getElementById('pnl-' + tfKey);
+
+            if (!plan) {
+                clearPriceLines(wrapper);
+                badge.style.display = 'none';
+                desc.innerHTML = '<span style="color:#64748b; font-size:11px;">Awaiting new confirmed order flow setup...</span>';
+                pnl.innerHTML = '';
+                return;
+            }
+
+            const signalId = tfKey + '_' + (plan.timeSeconds || plan.time) + '_' + plan.pattern;
+
+            if (concludedTrades[tfKey] === signalId) {
+                clearPriceLines(wrapper);
+                badge.style.display = 'none';
+                desc.innerHTML = '<span style="color:#64748b; font-size:11px;">Awaiting new confirmed order flow setup...</span>';
+                pnl.innerHTML = '';
+                return;
+            }
+
+            const reason = checkIsTradeConcluded(plan, candlesCache[tfKey], price);
+            if (reason !== null) {
+                concludedTrades[tfKey] = signalId;
+                clearPriceLines(wrapper);
+                badge.style.display = 'none';
+                desc.innerHTML = '<span style="color:#64748b; font-size:11px;">Awaiting new confirmed order flow setup...</span>';
+                pnl.innerHTML = '';
+                return;
+            }
+
+            drawPriceLines(wrapper, plan);
+            badge.style.display = 'inline-block';
+            badge.className = 'pill-action ' + (plan.isBullish ? 'bg-bull' : 'bg-bear');
+            badge.innerText = plan.isBullish ? '▲ LONG' : '▼ SHORT';
+            const srLabel = plan.isBullish ? 'Support/SL' : 'Resist/SL';
+            desc.innerHTML = 'Signal: <b>' + plan.pattern + '</b> (' + plan.time + ') &bull; Entry: <b>$' + formatPrice(plan.entry) + '</b> &bull; ' + srLabel + ': <b style="color:#f23645;">$' + formatPrice(plan.stopLoss) + '</b> &bull; TP1: <b style="color:#089981;">$' + formatPrice(plan.tp1) + '</b> &bull; TP2: <b style="color:#00e676;">$' + formatPrice(plan.tp2) + '</b>' + (plan.confluenceScore ? ' &bull; Confluence: <b style="color:#38bdf8;">' + plan.confluenceScore + '/100</b>' : '');
+
+            const diff = plan.isBullish ? (price - plan.entry) : (plan.entry - price);
+            const rMul = diff / plan.risk;
+            const sign = diff >= 0 ? '+' : '';
+            pnl.innerHTML = 'Live PnL: <span style="color:' + (diff >= 0 ? '#00e676' : '#ff1744') + '">' + sign + '$' + formatPrice(Math.abs(diff)) + ' (' + sign + rMul.toFixed(2) + 'R)</span>';
+        }
+
+        // INITIALIZE ALL 4 CHARTS
+        const c1m  = createEngineChart('chart-1m',  '1m',  '1m',  initialData1m,  []);
+        const c5m  = createEngineChart('chart-5m',  '5m',  '5m',  initialData5m,  []);
+        const c15m = createEngineChart('chart-15m', '15m', '15m', initialData15m, []);
+        const c1h  = createEngineChart('chart-1h',  '1h',  '1h',  initialData1h,  []);
+
+        const allChartWrappers = [c1m, c5m, c15m, c1h];
+        const wrappersMap = { '1m': c1m, '5m': c5m, '15m': c15m, '1h': c1h };
+
+        ['1m', '5m', '15m', '1h'].forEach(tf => {
+            updateTradePlanUI(tf, wrappersMap[tf], tradePlans[tf], currentBtcPrice);
+        });
+
+        function refitAll() {
+            setTimeout(() => {
+                allChartWrappers.forEach(cw => {
+                    cw.chart.applyOptions({ width: cw.container.clientWidth, height: cw.container.clientHeight });
+                    cw.chart.timeScale().fitContent();
+                });
+            }, 50);
+        }
+
+        function switchView(mode) {
+            const grid = document.getElementById('dash-grid');
+            grid.className = 'dashboard-container ' + (mode === 'grid' ? '' : mode);
+            document.querySelectorAll('.btn-tab').forEach(b => b.classList.remove('active'));
+            if (event && event.target) event.target.classList.add('active');
+            refitAll();
+        }
+
+        function toggleMaximize(tf) {
+            const grid = document.getElementById('dash-grid');
+            const targetClass = 'max-' + tf;
+            if (grid.classList.contains(targetClass)) {
+                switchView('grid');
+            } else {
+                switchView(targetClass);
+            }
+        }
+
+        // Real-Time Dynamic Coin Switcher in Browser!
+        async function switchCoin(newSym) {
+            if (newSym === currentSymbol) return;
+            currentSymbol = newSym;
+            document.getElementById('active-symbol-title').innerText = newSym;
+            document.querySelectorAll('.mover-btn').forEach(b => {
+                b.classList.toggle('active', b.innerText.includes(newSym.replace('USDT', '')));
+            });
+
+            if (activeWs) {
+                try { activeWs.close(); } catch(e){}
+            }
+
+            // Fetch new candles for all 4 timeframes
+            for (let tf of ['1m', '5m', '15m', '1h']) {
+                try {
+                    const res = await fetch('https://api.binance.com/api/v3/klines?symbol=' + newSym + '&interval=' + tf + '&limit=120');
+                    const raw = await res.json();
+                    const candles = raw.map(cols => ({
+                        timeSeconds: Math.floor(cols[0] / 1000),
+                        open: parseFloat(cols[1]),
+                        high: parseFloat(cols[2]),
+                        low: parseFloat(cols[3]),
+                        close: parseFloat(cols[4]),
+                        volume: parseFloat(cols[5])
+                    }));
+                    candlesCache[tf] = candles;
+                    wrappersMap[tf].candleSeries.setData(candles.map(c => ({
+                        time: c.timeSeconds, open: c.open, high: c.high, low: c.low, close: c.close
+                    })));
+                    wrappersMap[tf].chart.timeScale().fitContent();
+
+                    const alerts = detectPatternsClient(tf, candles, liveDelta, liveOrderBook);
+                    const markers = alerts.map(a => ({
+                        time: a.timeSeconds,
+                        position: a.isBullish ? 'belowBar' : 'aboveBar',
+                        color: a.isBullish ? '#00e676' : '#ff1744',
+                        shape: a.isBullish ? 'arrowUp' : 'arrowDown',
+                        text: getShortBadge(a.patternName)
+                    }));
+                    wrappersMap[tf].candleSeries.setMarkers(markers);
+                    alerts.forEach(a => {
+                        alertDetails[tf + '_' + a.timeSeconds] = {
+                            name: a.patternName,
+                            score: a.confidenceScore,
+                            price: a.price,
+                            desc: a.justification,
+                            bullish: a.isBullish
+                        };
+                    });
+                    const plan = calculateTradePlanClient(tf, candles, alerts);
+                    tradePlans[tf] = plan;
+                    if (tf === '1m' && candles.length > 0) {
+                        currentBtcPrice = candles[candles.length - 1].close;
+                        document.getElementById('live-btc-price').innerText = '$' + formatPrice(currentBtcPrice);
+                    }
+                    updateTradePlanUI(tf, wrappersMap[tf], plan, currentBtcPrice);
+                } catch(e) {
+                    console.error('Error switching coin for ' + tf, e);
+                }
+            }
+
+            // Reconnect WebSocket to new coin
+            initWebSocket();
+        }
+
+        async function refreshTimeframeAuto(tf) {
+            try {
+                const res = await fetch('https://api.binance.com/api/v3/klines?symbol=' + currentSymbol + '&interval=' + tf + '&limit=120');
+                const raw = await res.json();
+                const candles = raw.map(cols => ({
+                    timeSeconds: Math.floor(cols[0] / 1000),
+                    open: parseFloat(cols[1]),
+                    high: parseFloat(cols[2]),
+                    low: parseFloat(cols[3]),
+                    close: parseFloat(cols[4]),
+                    volume: parseFloat(cols[5])
+                }));
+
+                candlesCache[tf] = candles;
+                const wrapper = wrappersMap[tf];
+                wrapper.candleSeries.setData(candles.map(c => ({
+                    time: c.timeSeconds, open: c.open, high: c.high, low: c.low, close: c.close
+                })));
+
+                const alerts = detectPatternsClient(tf, candles, liveDelta, liveOrderBook);
+                const markers = alerts.map(a => ({
+                    time: a.timeSeconds,
+                    position: a.isBullish ? 'belowBar' : 'aboveBar',
+                    color: a.isBullish ? '#00e676' : '#ff1744',
+                    shape: a.isBullish ? 'arrowUp' : 'arrowDown',
+                    text: getShortBadge(a.patternName)
+                }));
+                wrapper.candleSeries.setMarkers(markers);
+
+                alerts.forEach(a => {
+                    alertDetails[tf + '_' + a.timeSeconds] = {
+                        name: a.patternName,
+                        score: a.confidenceScore,
+                        price: a.price,
+                        desc: a.justification,
+                        bullish: a.isBullish
+                    };
+                });
+
+                const plan = calculateTradePlanClient(tf, candles, alerts);
+                tradePlans[tf] = plan;
+                const latestPrice = candles[candles.length - 1].close;
+                updateTradePlanUI(tf, wrapper, plan, latestPrice);
+            } catch(e) {
+                console.error('Auto-refresh error on ' + tf, e);
+            }
+        }
+
+        setInterval(() => refreshTimeframeAuto('1m'), 10000);
+        setInterval(() => refreshTimeframeAuto('5m'), 20000);
+        setInterval(() => refreshTimeframeAuto('15m'), 30000);
+        setInterval(() => refreshTimeframeAuto('1h'), 60000);
+
+        const livePriceElem = document.getElementById('live-btc-price');
+        let lastPrice = currentBtcPrice;
+        let activeWs = null;
+
+        function initWebSocket() {
+            try {
+                const symLower = currentSymbol.toLowerCase();
+                const wsUrl = 'wss://stream.binance.com:9443/stream?streams=' +
+                    symLower + '@kline_1m/' +
+                    symLower + '@kline_5m/' +
+                    symLower + '@kline_15m/' +
+                    symLower + '@kline_1h/' +
+                    symLower + '@depth20@100ms/' +
+                    symLower + '@aggTrade';
+
+                const ws = new WebSocket(wsUrl);
+                activeWs = ws;
+
+                ws.onmessage = (event) => {
+                    try {
+                        const payload = JSON.parse(event.data);
+                        const stream = payload.stream;
+                        const data = payload.data;
+                        if (!stream || !data) return;
+
+                        if (stream.includes('@depth20')) {
+                            let bVol = 0, aVol = 0;
+                            if (data.bids) for (let b of data.bids) bVol += parseFloat(b[1]);
+                            if (data.asks) for (let a of data.asks) aVol += parseFloat(a[1]);
+                            const total = bVol + aVol;
+                            const imb = total > 0 ? ((bVol - aVol) / total) * 100 : 0;
+                            liveOrderBook.totalBidVol = bVol;
+                            liveOrderBook.totalAskVol = aVol;
+                            liveOrderBook.imbalancePct = imb;
+
+                            const obValElem = document.getElementById('live-ob-val');
+                            const obBidFill = document.getElementById('live-ob-bid-fill');
+                            const obAskFill = document.getElementById('live-ob-ask-fill');
+                            const obVols = document.getElementById('live-ob-vols');
+                            if (obValElem) {
+                                const isBidHeavy = imb >= 0;
+                                obValElem.className = 'of-val ' + (isBidHeavy ? 'text-bull' : 'text-bear');
+                                obValElem.innerText = (isBidHeavy ? '+' : '') + imb.toFixed(1) + '% (' + (isBidHeavy ? 'Bid Heavy' : 'Ask Heavy') + ')';
+                                const bidPct = total > 0 ? (bVol / total) * 100 : 50;
+                                const askPct = total > 0 ? (aVol / total) * 100 : 50;
+                                obBidFill.style.width = bidPct.toFixed(1) + '%';
+                                obAskFill.style.width = askPct.toFixed(1) + '%';
+                                obVols.innerText = 'Bids: ' + bVol.toFixed(2) + ' | Asks: ' + aVol.toFixed(2);
+                            }
+                        }
+
+                        else if (stream.includes('@aggTrade')) {
+                            const qty = parseFloat(data.q);
+                            const isTakerBuy = !data.m;
+                            recentTrades.push({ qty: qty, isBuy: isTakerBuy });
+                            if (recentTrades.length > 200) recentTrades.shift();
+
+                            let buyV = 0, sellV = 0;
+                            for (let t of recentTrades) {
+                                if (t.isBuy) buyV += t.qty; else sellV += t.qty;
+                            }
+                            const delta = buyV - sellV;
+                            const tot = buyV + sellV;
+                            const buyRatio = tot > 0 ? (buyV / tot) * 100 : 50;
+                            liveDelta.buyVol = buyV;
+                            liveDelta.sellVol = sellV;
+                            liveDelta.deltaBtc = delta;
+                            liveDelta.buyRatioPct = buyRatio;
+
+                            const deltaValElem = document.getElementById('live-delta-val');
+                            const deltaFill = document.getElementById('live-delta-fill');
+                            if (deltaValElem) {
+                                const isBull = delta >= 0;
+                                deltaValElem.className = 'of-val ' + (isBull ? 'text-bull' : 'text-bear');
+                                deltaValElem.innerText = (isBull ? '+' : '') + delta.toFixed(2) + ' (' + (isBull ? 'Buyers Dominant' : 'Sellers Dominant') + ')';
+                                deltaFill.style.width = Math.min(100, Math.max(0, buyRatio)).toFixed(1) + '%';
+                                deltaFill.style.background = isBull ? '#089981' : '#f23645';
+                            }
+                        }
+
+                        else if (stream.includes('@kline')) {
+                            const k = data.k;
+                            const tf = k.i;
+                            const candle = {
+                                time: Math.floor(k.t / 1000),
+                                open: parseFloat(k.o),
+                                high: parseFloat(k.h),
+                                low: parseFloat(k.l),
+                                close: parseFloat(k.c),
+                                volume: parseFloat(k.v)
+                            };
+
+                            const wrapper = wrappersMap[tf];
+                            if (wrapper) {
+                                wrapper.candleSeries.update(candle);
+                            }
+
+                            if (tf === '1m') {
+                                currentBtcPrice = candle.close;
+                                livePriceElem.innerText = '$' + formatPrice(currentBtcPrice);
+                                if (currentBtcPrice > lastPrice) {
+                                    livePriceElem.style.color = '#00e676';
+                                } else if (currentBtcPrice < lastPrice) {
+                                    livePriceElem.style.color = '#ff1744';
+                                }
+                                lastPrice = currentBtcPrice;
+
+                                ['1m', '5m', '15m', '1h'].forEach(tfKey => {
+                                    updateTradePlanUI(tfKey, wrappersMap[tfKey], tradePlans[tfKey], currentBtcPrice);
+                                });
+                            }
+
+                            if (k.x === true && wrapper) {
+                                const cCache = candlesCache[tf];
+                                if (cCache && cCache.length > 0) {
+                                    const lastIdx = cCache.length - 1;
+                                    if (cCache[lastIdx].timeSeconds === candle.time) {
+                                        cCache[lastIdx] = { timeSeconds: candle.time, open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume };
+                                    } else {
+                                        cCache.push({ timeSeconds: candle.time, open: candle.open, high: candle.high, low: candle.low, close: candle.close, volume: candle.volume });
+                                        if (cCache.length > 150) cCache.shift();
+                                    }
+                                }
+
+                                const alerts = detectPatternsClient(tf, candlesCache[tf], liveDelta, liveOrderBook);
+                                const markers = alerts.map(a => ({
+                                    time: a.timeSeconds,
+                                    position: a.isBullish ? 'belowBar' : 'aboveBar',
+                                    color: a.isBullish ? '#00e676' : '#ff1744',
+                                    shape: a.isBullish ? 'arrowUp' : 'arrowDown',
+                                    text: getShortBadge(a.patternName)
+                                }));
+                                wrapper.candleSeries.setMarkers(markers);
+
+                                alerts.forEach(a => {
+                                    alertDetails[tf + '_' + a.timeSeconds] = {
+                                        name: a.patternName,
+                                        score: a.confidenceScore,
+                                        price: a.price,
+                                        desc: a.justification,
+                                        bullish: a.isBullish
+                                    };
+                                });
+
+                                const plan = calculateTradePlanClient(tf, candlesCache[tf], alerts);
+                                tradePlans[tf] = plan;
+                                updateTradePlanUI(tf, wrapper, plan, candle.close);
+                            }
+                        }
+                    } catch(err) {
+                        console.error('Stream error', err);
+                    }
+                };
+
+                ws.onclose = () => {
+                    if (activeWs === ws) {
+                        console.warn('Stream disconnected. Reconnecting in 3s...');
+                        setTimeout(initWebSocket, 3000);
+                    }
+                };
+                ws.onerror = (e) => {
+                    console.error('Stream error', e);
+                    try { ws.close(); } catch(err) {}
+                };
+            } catch(e) {
+                console.error('WebSocket connection failed', e);
+                setTimeout(initWebSocket, 3000);
+            }
+        }
+        initWebSocket();
+    </script>
+</body>
+</html>

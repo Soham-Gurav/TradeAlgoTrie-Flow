@@ -1,0 +1,16 @@
+{
+  "name": "algorithmic-market-microstructure",
+  "version": "2.0.0",
+  "description": "Continuous Internal Assessment 03 - Advanced Algorithm Real-World Trading Engine",
+  "scripts": {
+    "dev": "node start.js",
+    "start": "node start.js",
+    "backend": "javac -d backend/bin backend/src/algo/*/*.java && java -cp backend/bin algo.api.AlgoApiServer",
+    "frontend": "cd frontend && npm run dev",
+    "test:algo": "java -cp backend/bin algo.test.AlgorithmTestSuite"
+  },
+  "keywords": ["advanced-algorithms", "tries", "max-flow", "min-cut", "bloom-filter", "quickselect"],
+  "author": "ATLAS uGDX B.Tech CS AI&ML",
+  "license": "MIT"
+}
+

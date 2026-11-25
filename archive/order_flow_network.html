@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Order Flow Network | CVD & Order Book Max-Flow Engine</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background-color: #080b11;
+            color: #d1d4dc;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* HEADER NAVIGATION */
+        .header-bar {
+            height: 48px;
+            background: #0f141f;
+            border-bottom: 1px solid #1e2638;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .brand-title {
+            font-size: 15px;
+            font-weight: 800;
+            color: #38bdf8;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .price-pill {
+            background: #182234;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #00e676;
+            border: 1px solid #2a3a54;
+            font-family: monospace;
+            min-width: 95px;
+            text-align: center;
+        }
+
+        .coins-selector {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #0b0f17;
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid #1a2233;
+        }
+        .selector-label {
+            font-size: 10px;
+            font-weight: 800;
+            color: #ff9800;
+            text-transform: uppercase;
+            margin-right: 2px;
+        }
+        .btn-coin {
+            background: #141c2c;
+            border: 1px solid #222d42;
+            color: #94a3b8;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-coin:hover { color: #fff; background: #1e293b; }
+        .btn-coin.active { background: #2563eb; color: #fff; border-color: #3b82f6; }
+
+        .nav-links {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .btn-nav {
+            background: #1a2233;
+            border: 1px solid #2d3b55;
+            color: #94a3b8;
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            font-weight: 700;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s;
+        }
+        .btn-nav:hover { background: #25334c; color: #fff; }
+
+        /* TELEMETRY SUBBAR */
+        .subbar {
+            height: 38px;
+            background: #0b0e17;
+            border-bottom: 1px solid #182030;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 22px;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+        .tele-item { display: flex; align-items: center; gap: 7px; }
+        .tele-label { color: #64748b; font-weight: 800; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .tele-val { font-weight: 700; font-family: monospace; }
+        .text-bull { color: #00e676; }
+        .text-bear { color: #ff1744; }
+        .text-cyan { color: #38bdf8; }
+        .text-amber { color: #fbbf24; }
+
+        /* MAIN STAGE */
+        .main-stage {
+            flex: 1;
+            display: flex;
+            width: 100%;
+            height: calc(100% - 86px);
+            position: relative;
+            background: radial-gradient(circle at 50% 50%, #0e1422 0%, #06090f 100%);
+        }
+
+        /* NETWORK CANVAS */
+        #networkCanvas {
+            flex: 1;
+            height: 100%;
+            display: block;
+        }
+
+        /* RIGHT TELEMETRY & THEORY PANEL */
+        .side-panel {
+            width: 340px;
+            background: #0c101a;
+            border-left: 1px solid #1a2233;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            padding: 14px;
+            gap: 14px;
+            flex-shrink: 0;
+        }
+        .panel-card {
+            background: #111726;
+            border: 1px solid #1e283d;
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .card-title {
+            font-size: 11px;
+            font-weight: 800;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .sink-badge {
+            font-size: 12px;
+            font-weight: 900;
+            padding: 4px 8px;
+            border-radius: 6px;
+            text-align: center;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+        .sink-bull { background: rgba(0, 230, 118, 0.15); color: #00e676; border: 1px solid #00e676; }
+        .sink-bear { background: rgba(255, 23, 68, 0.15); color: #ff1744; border: 1px solid #ff1744; }
+        .sink-absorb-bear { background: rgba(251, 191, 36, 0.15); color: #fbbf24; border: 1px solid #fbbf24; }
+        .sink-absorb-bull { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid #38bdf8; }
+        .sink-eq { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid #475569; }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
+            padding: 4px 0;
+            border-bottom: 1px solid #161e30;
+        }
+        .metric-row:last-child { border-bottom: none; }
+        .m-name { color: #64748b; font-weight: 600; }
+        .m-val { font-family: monospace; font-weight: 700; }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: #1a2233;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .progress-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .explainer-text {
+            font-size: 11px;
+            line-height: 1.45;
+            color: #94a3b8;
+        }
+        .explainer-text b { color: #e2e8f0; }
+
+        /* PULSING LIVE DOT */
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00e676;
+            box-shadow: 0 0 8px #00e676;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.9); opacity: 0.7; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0.9); opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOP HEADER BAR -->
+    <div class="header-bar">
+        <div class="brand-section">
+            <span class="live-dot"></span>
+            <div class="brand-title">🌐 NETWORK FLOW ENGINE <span style="font-size:10px; color:#64748b; font-weight:600;">MAX-FLOW / MIN-CUT</span></div>
+            <div id="livePricePill" class="price-pill">$0.00</div>
+        </div>
+
+        <!-- HOT MOVERS SELECTOR -->
+        <div class="coins-selector">
+            <span class="selector-label">ASSET:</span>
+            <button class="btn-coin" onclick="selectSymbol('BTCUSDT')">BTC</button>
+            <button class="btn-coin" onclick="selectSymbol('ETHUSDT')">ETH</button>
+            <button class="btn-coin active" onclick="selectSymbol('SOLUSDT')">SOL</button>
+            <button class="btn-coin" onclick="selectSymbol('NEARUSDT')">NEAR</button>
+            <button class="btn-coin" onclick="selectSymbol('DOGEUSDT')">DOGE</button>
+            <button class="btn-coin" onclick="selectSymbol('PEPEUSDT')">PEPE</button>
+        </div>
+
+        <div class="nav-links">
+            <a href="trie_predictor.html" class="btn-nav">🔮 Trie Predictor</a>
+            <a href="crypto_multichart.html" class="btn-nav">📊 MTF Terminal</a>
+        </div>
+    </div>
+
+    <!-- TELEMETRY SUBBAR -->
+    <div class="subbar">
+        <div class="tele-item">
+            <span class="tele-label">Active Symbol:</span>
+            <span id="subSymbol" class="tele-val text-cyan">SOLUSDT</span>
+        </div>
+        <div class="tele-item">
+            <span class="tele-label">S_Buy Taker Flow:</span>
+            <span id="subBuyFlow" class="tele-val text-bull">0.00</span>
+        </div>
+        <div class="tele-item">
+            <span class="tele-label">S_Sell Taker Flow:</span>
+            <span id="subSellFlow" class="tele-val text-bear">0.00</span>
+        </div>
+        <div class="tele-item">
+            <span class="tele-label">CVD Delta:</span>
+            <span id="subCvdDelta" class="tele-val text-bull">+0.00</span>
+        </div>
+        <div class="tele-item">
+            <span class="tele-label">Min-Cut Bottleneck:</span>
+            <span id="subBottleneck" class="tele-val text-amber">Ask Wall A1</span>
+        </div>
+        <div class="tele-item">
+            <span class="tele-label">Dynamic Sink State:</span>
+            <span id="subSinkState" class="tele-val text-bull">ANALYZING...</span>
+        </div>
+    </div>
+
+    <!-- MAIN CANVAS & SIDE PANEL -->
+    <div class="main-stage">
+        <canvas id="networkCanvas"></canvas>
+
+        <div class="side-panel">
+            <!-- SINK CARD -->
+            <div class="panel-card">
+                <div class="card-title">
+                    <span>DYNAMIC SINK TARGET</span>
+                    <span id="sinkBiasPill" style="font-size:9px; padding:2px 6px; border-radius:4px; font-weight:800; background:#1e293b;">SOLVER</span>
+                </div>
+                <div id="sinkBadge" class="sink-badge sink-bull">EXPONENTIAL BULLISH BREAKOUT</div>
+                <div class="metric-row">
+                    <span class="m-name">Dynamic Target Price</span>
+                    <span id="sinkTargetPrice" class="m-val text-cyan">$0.00</span>
+                </div>
+                <div class="metric-row">
+                    <span class="m-name">Projected Vector Move</span>
+                    <span id="sinkExpectedReturn" class="m-val text-bull">+0.00%</span>
+                </div>
+                <div class="metric-row">
+                    <span class="m-name">Net Terminal Pressure</span>
+                    <span id="sinkTerminalPressure" class="m-val">+0.00 units</span>
+                </div>
+                <div class="metric-row">
+                    <span class="m-name">Unabsorbed Flow Ratio</span>
+                    <span id="sinkUnabsorbedRatio" class="m-val">0.0%</span>
+                </div>
+            </div>
+
+            <!-- MIN-CUT BOTTLENECK CARD -->
+            <div class="panel-card">
+                <div class="card-title">
+                    <span>MIN-CUT LIQUIDITY WALL</span>
+                    <span style="color:#fbbf24; font-size:10px;">BOTTLENECK</span>
+                </div>
+                <div class="metric-row">
+                    <span class="m-name">Key Obstacle Node</span>
+                    <span id="bnWallName" class="m-val text-amber">Ask Wall A1</span>
+                </div>
+                <div class="metric-row">
+                    <span class="m-name">Wall Price Level</span>
+                    <span id="bnPrice" class="m-val">$0.00</span>
+                </div>
+                <div class="metric-row">
+                    <span class="m-name">Wall Capacity (C)</span>
+                    <span id="bnCapacity" class="m-val">0.00 tokens</span>
+                </div>
+                <div class="metric-row">
+                    <span class="m-name">Current Flow Pushed (f)</span>
+                    <span id="bnFlow" class="m-val">0.00 tokens</span>
+                </div>
+                <div style="margin-top:8px;">
+                    <div style="display:flex; justify-content:space-between; font-size:10px; color:#64748b; font-weight:700;">
+                        <span>WALL SATURATION</span>
+                        <span id="bnSatPct">0.0%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="bnProgressBar" class="progress-bar-fill" style="width: 0%; background: #fbbf24;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NETWORK ARCHITECTURE EXPLAINER -->
+            <div class="panel-card">
+                <div class="card-title">
+                    <span>MICROSTRUCTURE GRAPH MODEL</span>
+                </div>
+                <p class="explainer-text">
+                    <b>1. Sources (S):</b> Market aggressive orders inject liquid energy. <b>S_Buy</b> (green) and <b>S_Sell</b> (red) derive from real-time CVD tick rate.<br><br>
+                    <b>2. Order Book Layers (V):</b> Intermediate nodes represent resting Limit Bids & Asks. Edge capacities $C(u, v)$ equal order book depth.<br><br>
+                    <b>3. Min-Cut Bottleneck:</b> By Max-Flow Min-Cut theorem, price can only advance if incoming flow exceeds the saturated cut capacity.<br><br>
+                    <b>4. Dynamic Sink (T):</b> The sink physically shifts vertically based on unabsorbed residual pressure, predicting breakouts vs absorption reversals.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSymbol = 'SOLUSDT';
+        let currentPrice = 0.0;
+        let wsTrades = null;
+        let wsDepth = null;
+
+        // Flow network state
+        let takerBuyVol = 0.0;
+        let takerSellVol = 0.0;
+        let orderBookBids = [];
+        let orderBookAsks = [];
+        let particles = [];
+        let solverResult = null;
+
+        const canvas = document.getElementById('networkCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth - 340;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function selectSymbol(sym) {
+            currentSymbol = sym;
+            document.getElementById('subSymbol').innerText = sym;
+            document.querySelectorAll('.btn-coin').forEach(btn => {
+                btn.classList.toggle('active', btn.innerText === sym.replace('USDT', ''));
+            });
+            takerBuyVol = 0.0;
+            takerSellVol = 0.0;
+            particles = [];
+            initWebSockets();
+        }
+
+        async function fetchInitialSnapshots() {
+            try {
+                // Fetch Depth
+                const dResp = await fetch(`https://api.binance.com/api/v3/depth?symbol=${currentSymbol}&limit=20`);
+                const dJson = await dResp.json();
+                orderBookBids = dJson.bids.slice(0, 6).map(b => ({ price: parseFloat(b[0]), qty: parseFloat(b[1]) }));
+                orderBookAsks = dJson.asks.slice(0, 6).map(a => ({ price: parseFloat(a[0]), qty: parseFloat(a[1]) }));
+
+                if (orderBookBids.length > 0 && orderBookAsks.length > 0) {
+                    currentPrice = (orderBookBids[0].price + orderBookAsks[0].price) / 2.0;
+                    document.getElementById('livePricePill').innerText = formatPrice(currentPrice);
+                }
+
+                // Fetch AggTrades
+                const tResp = await fetch(`https://api.binance.com/api/v3/aggTrades?symbol=${currentSymbol}&limit=150`);
+                const tJson = await tResp.json();
+                let b = 0.0, s = 0.0;
+                tJson.forEach(t => {
+                    const q = parseFloat(t.q);
+                    if (t.m) s += q; else b += q;
+                });
+                takerBuyVol = b;
+                takerSellVol = s;
+
+                solveNetworkModel();
+            } catch (e) {
+                console.error("Snapshot error:", e);
+            }
+        }
+
+        function initWebSockets() {
+            if (wsTrades) wsTrades.close();
+            if (wsDepth) wsDepth.close();
+
+            fetchInitialSnapshots();
+
+            const sym = currentSymbol.toLowerCase();
+            wsTrades = new WebSocket(`wss://stream.binance.com:9443/ws/${sym}@aggTrade`);
+            wsTrades.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                const q = parseFloat(data.q);
+                const isSell = data.m; // true if buyer is maker (market sell)
+                const p = parseFloat(data.p);
+                currentPrice = p;
+                document.getElementById('livePricePill').innerText = formatPrice(p);
+
+                // Add to rolling CVD
+                if (isSell) {
+                    takerSellVol = takerSellVol * 0.985 + q;
+                    spawnParticles('SELL', Math.min(6, Math.max(1, Math.floor(q))));
+                } else {
+                    takerBuyVol = takerBuyVol * 0.985 + q;
+                    spawnParticles('BUY', Math.min(6, Math.max(1, Math.floor(q))));
+                }
+
+                solveNetworkModel();
+            };
+
+            wsDepth = new WebSocket(`wss://stream.binance.com:9443/ws/${sym}@depth20@100ms`);
+            wsDepth.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                orderBookBids = data.bids.slice(0, 6).map(b => ({ price: parseFloat(b[0]), qty: parseFloat(b[1]) }));
+                orderBookAsks = data.asks.slice(0, 6).map(a => ({ price: parseFloat(a[0]), qty: parseFloat(a[1]) }));
+                solveNetworkModel();
+            };
+        }
+
+        function solveNetworkModel() {
+            if (orderBookBids.length === 0 || orderBookAsks.length === 0) return;
+
+            const cvdDelta = takerBuyVol - takerSellVol;
+            const totalVol = takerBuyVol + takerSellVol;
+
+            // Compute Max Flows through Asks and Bids
+            const askCapacityA1 = orderBookAsks[0].qty;
+            const bidCapacityB1 = orderBookBids[0].qty;
+
+            const buySaturation = askCapacityA1 > 0 ? (takerBuyVol / askCapacityA1) : 1.0;
+            const sellSaturation = bidCapacityB1 > 0 ? (takerSellVol / bidCapacityB1) : 1.0;
+
+            let dirType = 'EQUILIBRIUM_PIN';
+            let badgeClass = 'sink-eq';
+            let title = 'EQUILIBRIUM PIN / CHOP';
+            let targetPrice = currentPrice;
+            let targetReturnPct = 0.0;
+            let unabsorbedRatio = 0.0;
+
+            if (takerBuyVol > 1.2 * takerSellVol && buySaturation >= 0.8) {
+                dirType = 'BULLISH_BREAKOUT';
+                badgeClass = 'sink-bull';
+                title = 'EXPONENTIAL BULLISH BREAKOUT';
+                targetPrice = orderBookAsks[Math.min(orderBookAsks.length - 1, 3)].price * 1.001;
+                targetReturnPct = ((targetPrice - currentPrice) / currentPrice) * 100.0;
+                unabsorbedRatio = Math.min(100.0, (buySaturation - 0.8) * 100.0);
+            } else if (takerSellVol > 1.2 * takerBuyVol && sellSaturation >= 0.8) {
+                dirType = 'BEARISH_BREAKDOWN';
+                badgeClass = 'sink-bear';
+                title = 'BEARISH CASCADE BREAKDOWN';
+                targetPrice = orderBookBids[Math.min(orderBookBids.length - 1, 3)].price * 0.999;
+                targetReturnPct = ((targetPrice - currentPrice) / currentPrice) * 100.0;
+                unabsorbedRatio = Math.min(100.0, (sellSaturation - 0.8) * 100.0);
+            } else if (takerBuyVol > takerSellVol && buySaturation < 0.45) {
+                dirType = 'ABSORPTION_REVERSAL_BEAR';
+                badgeClass = 'sink-absorb-bear';
+                title = 'ABSORPTION REVERSAL (BEARISH)';
+                targetPrice = orderBookBids[1].price;
+                targetReturnPct = ((targetPrice - currentPrice) / currentPrice) * 100.0;
+                unabsorbedRatio = 10.0;
+            } else if (takerSellVol > takerBuyVol && sellSaturation < 0.45) {
+                dirType = 'ABSORPTION_REVERSAL_BULL';
+                badgeClass = 'sink-absorb-bull';
+                title = 'ABSORPTION REVERSAL (BULLISH)';
+                targetPrice = orderBookAsks[1].price;
+                targetReturnPct = ((targetPrice - currentPrice) / currentPrice) * 100.0;
+                unabsorbedRatio = 10.0;
+            }
+
+            // Min-cut Bottleneck determination
+            const primaryIsAsk = buySaturation > sellSaturation;
+            const bnWall = primaryIsAsk ? "Ask Wall A1" : "Bid Wall B1";
+            const bnP = primaryIsAsk ? orderBookAsks[0].price : orderBookBids[0].price;
+            const bnCap = primaryIsAsk ? askCapacityA1 : bidCapacityB1;
+            const bnFlow = primaryIsAsk ? Math.min(takerBuyVol, bnCap) : Math.min(takerSellVol, bnCap);
+            const bnSat = bnCap > 0 ? Math.min(100.0, (bnFlow / bnCap) * 100.0) : 100.0;
+
+            solverResult = {
+                dirType, badgeClass, title, targetPrice, targetReturnPct,
+                takerBuyVol, takerSellVol, cvdDelta,
+                bnWall, bnP, bnCap, bnFlow, bnSat, unabsorbedRatio
+            };
+
+            // Update UI telemetry
+            document.getElementById('subBuyFlow').innerText = takerBuyVol.toFixed(2);
+            document.getElementById('subSellFlow').innerText = takerSellVol.toFixed(2);
+            document.getElementById('subCvdDelta').innerText = (cvdDelta >= 0 ? '+' : '') + cvdDelta.toFixed(2);
+            document.getElementById('subCvdDelta').className = 'tele-val ' + (cvdDelta >= 0 ? 'text-bull' : 'text-bear');
+            document.getElementById('subBottleneck').innerText = bnWall + " ($" + formatPrice(bnP) + ")";
+            document.getElementById('subSinkState').innerText = title;
+            document.getElementById('subSinkState').className = 'tele-val ' + (targetReturnPct > 0 ? 'text-bull' : (targetReturnPct < 0 ? 'text-bear' : 'text-amber'));
+
+            const sinkBadge = document.getElementById('sinkBadge');
+            sinkBadge.innerText = title;
+            sinkBadge.className = 'sink-badge ' + badgeClass;
+
+            document.getElementById('sinkTargetPrice').innerText = '$' + formatPrice(targetPrice);
+            document.getElementById('sinkExpectedReturn').innerText = (targetReturnPct >= 0 ? '+' : '') + targetReturnPct.toFixed(2) + '%';
+            document.getElementById('sinkExpectedReturn').className = 'm-val ' + (targetReturnPct > 0 ? 'text-bull' : (targetReturnPct < 0 ? 'text-bear' : 'text-amber'));
+            document.getElementById('sinkTerminalPressure').innerText = (cvdDelta >= 0 ? '+' : '') + cvdDelta.toFixed(1) + ' flow units';
+            document.getElementById('sinkUnabsorbedRatio').innerText = unabsorbedRatio.toFixed(1) + '%';
+
+            document.getElementById('bnWallName').innerText = bnWall;
+            document.getElementById('bnPrice').innerText = '$' + formatPrice(bnP);
+            document.getElementById('bnCapacity').innerText = bnCap.toFixed(2) + ' tokens';
+            document.getElementById('bnFlow').innerText = bnFlow.toFixed(2) + ' tokens';
+            document.getElementById('bnSatPct').innerText = bnSat.toFixed(1) + '%';
+            document.getElementById('bnProgressBar').style.width = bnSat.toFixed(1) + '%';
+            document.getElementById('bnProgressBar').style.background = bnSat >= 85 ? '#ff1744' : (bnSat >= 50 ? '#fbbf24' : '#00e676');
+        }
+
+        // PARTICLE SYSTEM FOR NETWORK FLOW
+        function spawnParticles(type, count) {
+            const w = canvas.width;
+            const h = canvas.height;
+            const sourceBuyPos = { x: 90, y: h * 0.32 };
+            const sourceSellPos = { x: 90, y: h * 0.68 };
+
+            const origin = type === 'BUY' ? sourceBuyPos : sourceSellPos;
+            const color = type === 'BUY' ? '#00e676' : '#ff1744';
+
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: origin.x + (Math.random() - 0.5) * 20,
+                    y: origin.y + (Math.random() - 0.5) * 20,
+                    vx: 2.5 + Math.random() * 2.5,
+                    vy: (Math.random() - 0.5) * 1.5,
+                    type: type,
+                    life: 0,
+                    maxLife: 120 + Math.random() * 40,
+                    color: color,
+                    size: 2.5 + Math.random() * 2.0
+                });
+            }
+        }
+
+        // RENDER LOOP
+        function renderGraph() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const w = canvas.width;
+            const h = canvas.height;
+
+            if (w <= 0 || h <= 0) {
+                requestAnimationFrame(renderGraph);
+                return;
+            }
+
+            // Coordinates
+            const sourceBuy = { x: 100, y: h * 0.30 };
+            const sourceSell = { x: 100, y: h * 0.70 };
+
+            // Middle Order Book Tiers
+            const midX = w * 0.50;
+            const askNodes = [];
+            const bidNodes = [];
+            const nTiers = Math.min(5, Math.max(orderBookAsks.length, 1));
+
+            // Asks positioned in top-middle
+            for (let i = 0; i < nTiers; i++) {
+                const y = h * 0.44 - (i * (h * 0.075));
+                askNodes.push({ x: midX, y: y, label: `A${i+1}`, data: orderBookAsks[i] });
+            }
+
+            // Bids positioned in bottom-middle
+            for (let i = 0; i < nTiers; i++) {
+                const y = h * 0.56 + (i * (h * 0.075));
+                bidNodes.push({ x: midX, y: y, label: `B${i+1}`, data: orderBookBids[i] });
+            }
+
+            // Dynamic Sink on Right
+            // Sink vertically shifts according to target price move!
+            let sinkVerticalBias = 0;
+            if (solverResult) {
+                sinkVerticalBias = -solverResult.targetReturnPct * 120; // Move up on bull, down on bear
+                sinkVerticalBias = Math.max(-h * 0.35, Math.min(h * 0.35, sinkVerticalBias));
+            }
+            const sinkNode = { x: w - 120, y: h * 0.50 + sinkVerticalBias };
+
+            // 1. DRAW PIPES / EDGES
+            ctx.lineWidth = 2;
+
+            // S_Buy -> Asks
+            askNodes.forEach((node, idx) => {
+                ctx.strokeStyle = idx === 0 ? 'rgba(0, 230, 118, 0.45)' : 'rgba(0, 230, 118, 0.15)';
+                ctx.beginPath();
+                ctx.moveTo(sourceBuy.x, sourceBuy.y);
+                ctx.bezierCurveTo(sourceBuy.x + 120, sourceBuy.y, node.x - 120, node.y, node.x, node.y);
+                ctx.stroke();
+
+                // Asks -> Sink
+                ctx.strokeStyle = 'rgba(56, 189, 248, 0.20)';
+                ctx.beginPath();
+                ctx.moveTo(node.x, node.y);
+                ctx.bezierCurveTo(node.x + 100, node.y, sinkNode.x - 100, sinkNode.y, sinkNode.x, sinkNode.y);
+                ctx.stroke();
+            });
+
+            // S_Sell -> Bids
+            bidNodes.forEach((node, idx) => {
+                ctx.strokeStyle = idx === 0 ? 'rgba(255, 23, 68, 0.45)' : 'rgba(255, 23, 68, 0.15)';
+                ctx.beginPath();
+                ctx.moveTo(sourceSell.x, sourceSell.y);
+                ctx.bezierCurveTo(sourceSell.x + 120, sourceSell.y, node.x - 120, node.y, node.x, node.y);
+                ctx.stroke();
+
+                // Bids -> Sink
+                ctx.strokeStyle = 'rgba(255, 23, 68, 0.20)';
+                ctx.beginPath();
+                ctx.moveTo(node.x, node.y);
+                ctx.bezierCurveTo(node.x + 100, node.y, sinkNode.x - 100, sinkNode.y, sinkNode.x, sinkNode.y);
+                ctx.stroke();
+            });
+
+            // 2. UPDATE & DRAW PARTICLES
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life++;
+                const progress = p.life / p.maxLife;
+
+                if (progress >= 1.0) {
+                    particles.splice(i, 1);
+                    continue;
+                }
+
+                // Move particle along flow path
+                if (progress < 0.5) {
+                    // Source to Tier
+                    const t = progress / 0.5;
+                    const origin = p.type === 'BUY' ? sourceBuy : sourceSell;
+                    const target = p.type === 'BUY' ? askNodes[0] : bidNodes[0];
+                    if (target) {
+                        p.x = (1 - t) * origin.x + t * target.x;
+                        p.y = (1 - t) * origin.y + t * target.y;
+                    }
+                } else {
+                    // Tier to Sink
+                    const t = (progress - 0.5) / 0.5;
+                    const origin = p.type === 'BUY' ? askNodes[0] : bidNodes[0];
+                    if (origin) {
+                        p.x = (1 - t) * origin.x + t * sinkNode.x;
+                        p.y = (1 - t) * origin.y + t * sinkNode.y;
+                    }
+                }
+
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 3. DRAW NODES
+            // Source Buy
+            drawGlowNode(sourceBuy.x, sourceBuy.y, 34, '#00e676', 'S_BUY', 'CVD Taker');
+            // Source Sell
+            drawGlowNode(sourceSell.x, sourceSell.y, 34, '#ff1744', 'S_SELL', 'CVD Taker');
+
+            // Ask Tiers
+            askNodes.forEach((an, i) => {
+                const isBottleneck = i === 0;
+                const color = isBottleneck ? '#fbbf24' : '#ef4444';
+                const pStr = an.data ? '$' + formatPrice(an.data.price) : '';
+                const qStr = an.data ? an.data.qty.toFixed(1) : '';
+                drawBookTierNode(an.x, an.y, 22, color, an.label, pStr, qStr, isBottleneck);
+            });
+
+            // Bid Tiers
+            bidNodes.forEach((bn, i) => {
+                const isBottleneck = i === 0;
+                const color = isBottleneck ? '#fbbf24' : '#10b981';
+                const pStr = bn.data ? '$' + formatPrice(bn.data.price) : '';
+                const qStr = bn.data ? bn.data.qty.toFixed(1) : '';
+                drawBookTierNode(bn.x, bn.y, 22, color, bn.label, pStr, qStr, false);
+            });
+
+            // Dynamic Sink Node
+            let sinkColor = '#38bdf8';
+            if (solverResult) {
+                if (solverResult.dirType === 'BULLISH_BREAKOUT') sinkColor = '#00e676';
+                else if (solverResult.dirType === 'BEARISH_BREAKDOWN') sinkColor = '#ff1744';
+                else if (solverResult.dirType.startsWith('ABSORPTION')) sinkColor = '#fbbf24';
+            }
+            drawDynamicSinkNode(sinkNode.x, sinkNode.y, 44, sinkColor);
+
+            requestAnimationFrame(renderGraph);
+        }
+
+        function drawGlowNode(x, y, radius, color, label, sub) {
+            ctx.save();
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 18;
+
+            ctx.fillStyle = '#0f172a';
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, x, y - 5);
+
+            ctx.fillStyle = color;
+            ctx.font = '800 9px monospace';
+            ctx.fillText(sub, x, y + 8);
+            ctx.restore();
+        }
+
+        function drawBookTierNode(x, y, radius, color, label, price, qty, isBottleneck) {
+            ctx.save();
+            if (isBottleneck) {
+                ctx.shadowColor = '#fbbf24';
+                ctx.shadowBlur = 14;
+            }
+
+            ctx.fillStyle = '#111827';
+            ctx.strokeStyle = color;
+            ctx.lineWidth = isBottleneck ? 2.5 : 1.5;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#f1f5f9';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, x, y);
+
+            // Labels to the right
+            ctx.textAlign = 'left';
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '700 10px monospace';
+            ctx.fillText(price, x + radius + 10, y - 3);
+            ctx.fillStyle = color;
+            ctx.font = '600 9px monospace';
+            ctx.fillText(`${qty} cap`, x + radius + 10, y + 8);
+
+            if (isBottleneck) {
+                ctx.fillStyle = '#fbbf24';
+                ctx.font = 'bold 8px sans-serif';
+                ctx.fillText('[MIN-CUT]', x - radius - 55, y);
+            }
+            ctx.restore();
+        }
+
+        function drawDynamicSinkNode(x, y, radius, color) {
+            ctx.save();
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 24;
+
+            // Outer ring
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 3;
+            ctx.fillStyle = '#060a12';
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Inner rotating suction indicator
+            const angle = (Date.now() / 400) % (Math.PI * 2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, radius * 0.65, angle, angle + Math.PI * 1.3);
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#f8fafc';
+            ctx.font = '800 11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('DYNAMIC SINK', x, y - 7);
+
+            ctx.fillStyle = color;
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText('(FINAL DIR)', x, y + 8);
+
+            // Target arrow pointing up or down
+            if (solverResult && solverResult.targetReturnPct !== 0) {
+                const isUp = solverResult.targetReturnPct > 0;
+                ctx.fillStyle = isUp ? '#00e676' : '#ff1744';
+                ctx.font = 'bold 14px sans-serif';
+                ctx.fillText(isUp ? '▲' : '▼', x, y + 24);
+            }
+            ctx.restore();
+        }
+
+        function formatPrice(p) {
+            if (p >= 1000) return p.toFixed(2);
+            if (p >= 1.0) return p.toFixed(4);
+            return p.toFixed(6);
+        }
+
+        // STARTUP
+        initWebSockets();
+        requestAnimationFrame(renderGraph);
+    </script>
+</body>
+</html>
+

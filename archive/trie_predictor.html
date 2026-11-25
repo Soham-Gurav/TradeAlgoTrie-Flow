@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Double Trie Candlestick Autofill & Autocomplete Predictor</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background-color: #0b0e14;
+            color: #d1d4dc;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* TOP NAVIGATION HEADER */
+        .header-bar {
+            height: 48px;
+            background: #131722;
+            border-bottom: 1px solid #232838;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 16px;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .brand-title {
+            font-size: 15px;
+            font-weight: 800;
+            color: #38bdf8;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .price-pill {
+            background: #1e2638;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #00e676;
+            border: 1px solid #2a354d;
+            font-family: monospace;
+            min-width: 95px;
+            text-align: center;
+        }
+
+        /* COIN SELECTOR BUTTONS */
+        .coins-selector {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: #10141f;
+            padding: 3px 8px;
+            border-radius: 6px;
+            border: 1px solid #1e2638;
+        }
+        .selector-label {
+            font-size: 10px;
+            font-weight: 800;
+            color: #ff9800;
+            text-transform: uppercase;
+            margin-right: 2px;
+        }
+        .btn-coin {
+            background: #192030;
+            border: 1px solid #273147;
+            color: #94a3b8;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-coin:hover { color: #fff; background: #232c40; }
+        .btn-coin.active { background: #2962ff; color: #fff; border-color: #3b82f6; }
+
+        /* CONTROLS (TIMEFRAME & PREDICTION STEPS) */
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .btn-group {
+            display: flex;
+            background: #181d2a;
+            padding: 2px;
+            border-radius: 6px;
+            border: 1px solid #232838;
+            gap: 2px;
+        }
+        .btn-opt {
+            background: transparent;
+            border: none;
+            color: #8e96aa;
+            padding: 4px 9px;
+            font-size: 11px;
+            font-weight: 700;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-opt:hover { color: #f1f5f9; background: #23293a; }
+        .btn-opt.active { color: #fff; background: #38bdf8; color: #04101d; }
+
+        /* PREDICTION TELEMETRY SUBBAR */
+        .prediction-subbar {
+            height: 38px;
+            background: #0d111a;
+            border-bottom: 1px solid #1c2230;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            gap: 20px;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+        .tele-item { display: flex; align-items: center; gap: 7px; }
+        .tele-label { color: #64748b; font-weight: 800; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .tele-val { font-weight: 700; font-family: monospace; }
+        .tag-token {
+            background: #1e293b;
+            color: #38bdf8;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 800;
+            border: 1px solid #334155;
+        }
+        .tag-token.future {
+            background: rgba(56, 189, 248, 0.15);
+            color: #38bdf8;
+            border: 1px dashed #0284c7;
+        }
+        .text-bull { color: #00e676; }
+        .text-bear { color: #f23645; }
+        .badge-verdict {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 800;
+        }
+        .bg-bull-badge { background: rgba(0, 230, 118, 0.18); color: #00e676; border: 1px solid #00e676; }
+        .bg-bear-badge { background: rgba(242, 54, 69, 0.18); color: #ff1744; border: 1px solid #ff1744; }
+
+        /* MAIN CONTENT AREA: CHART + RIGHT STEP INSPECTOR */
+        .workspace-grid {
+            flex: 1;
+            display: flex;
+            width: 100%;
+            height: calc(100% - 86px);
+            position: relative;
+        }
+        .chart-container {
+            flex: 1;
+            height: 100%;
+            position: relative;
+        }
+
+        /* HOVER HUD */
+        .hover-hud {
+            position: absolute;
+            top: 10px;
+            left: 12px;
+            z-index: 10;
+            background: rgba(19, 23, 34, 0.92);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(43, 53, 77, 0.8);
+            padding: 4px 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            color: #94a3b8;
+            pointer-events: none;
+            display: flex;
+            gap: 12px;
+            font-family: monospace;
+        }
+        .hover-hud span b { color: #f1f5f9; }
+        .hud-highlight { color: #38bdf8; font-weight: 700; }
+
+        /* RIGHT STEP INSPECTOR DRAWER */
+        .step-drawer {
+            width: 320px;
+            background: #10141e;
+            border-left: 1px solid #1c2230;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .drawer-header {
+            height: 32px;
+            background: #141926;
+            border-bottom: 1px solid #1e2638;
+            padding: 0 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            font-weight: 800;
+            color: #cbd5e1;
+            text-transform: uppercase;
+        }
+        .drawer-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .step-card {
+            background: #151a26;
+            border: 1px solid #232a3d;
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 11px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            transition: all 0.2s;
+        }
+        .step-card:hover {
+            border-color: #38bdf8;
+            background: #192030;
+        }
+        .step-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .step-num {
+            font-weight: 800;
+            color: #38bdf8;
+            font-size: 10px;
+        }
+        .step-delta {
+            font-weight: 800;
+            font-family: monospace;
+        }
+        .step-ohlc {
+            color: #64748b;
+            font-family: monospace;
+            font-size: 10px;
+        }
+        .step-ohlc b { color: #cbd5e1; }
+        .conf-bar-bg {
+            height: 4px;
+            background: #232c40;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 2px;
+        }
+        .conf-bar-fill {
+            height: 100%;
+            background: #38bdf8;
+        }
+
+        .pulse-live {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #00e676;
+            box-shadow: 0 0 6px #00e676;
+            animation: pulse-stream 1.5s infinite;
+        }
+        @keyframes pulse-stream {
+            0% { opacity: 0.3; }
+            50% { opacity: 1; }
+            100% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- TOP HEADER -->
+    <header class="header-bar">
+        <div class="brand-section">
+            <div class="brand-title">&#128302; DOUBLE TRIE AUTOFILL PREDICTOR</div>
+            <div class="price-pill" id="live-price">$0.00</div>
+        </div>
+
+        <!-- COIN SELECTION -->
+        <div class="coins-selector">
+            <span class="selector-label">&#128293; COIN:</span>
+            <button class="btn-coin active" onclick="switchCoin('BTCUSDT')">BTC</button>
+            <button class="btn-coin" onclick="switchCoin('ETHUSDT')">ETH</button>
+            <button class="btn-coin" onclick="switchCoin('SOLUSDT')">SOL</button>
+            <button class="btn-coin" onclick="switchCoin('ZECUSDT')">ZEC</button>
+            <button class="btn-coin" onclick="switchCoin('NIGHTUSDT')">NIGHT</button>
+            <button class="btn-coin" onclick="switchCoin('HYPEUSDT')">HYPE</button>
+            <button class="btn-coin" onclick="switchCoin('PEPEUSDT')">PEPE</button>
+            <button class="btn-coin" onclick="switchCoin('DASHUSDT')">DASH</button>
+        </div>
+
+        <!-- TIMEFRAME & PREDICTION STEPS CONTROLS -->
+        <div class="controls-group">
+            <div class="btn-group">
+                <button class="btn-opt" onclick="switchInterval('1m')">1M</button>
+                <button class="btn-opt" onclick="switchInterval('5m')">5M</button>
+                <button class="btn-opt active" onclick="switchInterval('15m')">15M</button>
+                <button class="btn-opt" onclick="switchInterval('1h')">1H</button>
+            </div>
+
+            <div class="btn-group">
+                <span style="font-size:10px; color:#64748b; font-weight:800; align-self:center; margin:0 4px;">STEPS:</span>
+                <button class="btn-opt" onclick="setPredictionSteps(3)">3 BARS</button>
+                <button class="btn-opt active" onclick="setPredictionSteps(5)">5 BARS</button>
+                <button class="btn-opt" onclick="setPredictionSteps(8)">8 BARS</button>
+                <button class="btn-opt" onclick="setPredictionSteps(10)">10 BARS</button>
+            </div>
+            <div class="btn-group">
+                <a href="order_flow_network.html" target="_blank" style="text-decoration:none;"><button class="btn-opt" style="background:#10b981; color:#04101d; font-weight:800;" title="Open Dynamic Network Flow Engine">&#127760; Flow Network</button></a>
+                <a href="crypto_multichart.html" target="_blank" style="text-decoration:none;"><button class="btn-opt" style="background:#1e2638; color:#94a3b8; font-weight:800;" title="Open MTF Terminal">&#128202; MTF</button></a>
+            </div>
+        </div>
+    </header>
+
+    <!-- PREDICTION TELEMETRY SUBBAR -->
+    <div class="prediction-subbar">
+        <div class="tele-item">
+            <span class="tele-label">&#128269; Prefix Matched:</span>
+            <span id="prefix-matched-tokens" style="display:flex; gap:3px;">-</span>
+            <span class="tele-val text-bull" id="prefix-matches-count">(0 hits)</span>
+        </div>
+
+        <div class="tele-item">
+            <span class="tele-label">&#10140; Trie Autofill Path:</span>
+            <span id="autofill-path-tokens" style="display:flex; gap:3px;">-</span>
+        </div>
+
+        <div class="tele-item">
+            <span class="tele-label">&#9878; Expected Move:</span>
+            <span class="badge-verdict" id="verdict-badge">CALCULATING...</span>
+        </div>
+
+        <div class="tele-item">
+            <span class="tele-label">&#127919; Target Price:</span>
+            <span class="tele-val" id="target-price-val">$0.00</span>
+        </div>
+
+        <div class="tele-item" style="margin-left:auto;">
+            <span class="pulse-live"></span>
+            <span style="color:#38bdf8; font-weight:700; font-size:10px;">LIVE 0ms WEBSOCKET AUTOPREDICTOR</span>
+        </div>
+    </div>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="workspace-grid">
+        <div class="chart-container" id="chart-viewport">
+            <div class="hover-hud" id="hud">
+                <span>O: <b id="hud-o">-</b></span>
+                <span>H: <b id="hud-h">-</b></span>
+                <span>L: <b id="hud-l">-</b></span>
+                <span>C: <b id="hud-c">-</b></span>
+                <span class="hud-highlight" id="hud-type">-</span>
+            </div>
+        </div>
+
+        <!-- RIGHT STEP-BY-STEP FUTURE CANDLE FORECAST DRAWER -->
+        <aside class="step-drawer">
+            <div class="drawer-header">
+                <span>&#128203; Autofill Candle Breakdown</span>
+                <span id="total-horizon-label">Next 5 Bars</span>
+            </div>
+            <div class="drawer-content" id="step-cards-container">
+                <!-- Step cards dynamically generated here -->
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        // =========================================================================================
+        // CLIENT-SIDE DOUBLE TRIE ALGORITHM (DIRECTION + MAGNITUDE AUTOCOMPLETE)
+        // =========================================================================================
+        class DoubleTriePredictor {
+            constructor(maxPrefixDepth = 5) {
+                this.maxPrefixDepth = maxPrefixDepth;
+                this.root = { visits: 0, children: {}, nextTransitions: {}, stats: {} };
+            }
+
+            tokenize(candle, atr) {
+                const body = Math.abs(candle.close - candle.open);
+                const range = Math.max(candle.high - candle.low, 0.00000001);
+
+                let dir;
+                if (body / range < 0.08) dir = 'D'; // Doji
+                else if (candle.close > candle.open) dir = 'G'; // Bullish Green
+                else dir = 'R'; // Bearish Red
+
+                let mag;
+                const ratio = body / Math.max(atr, 0.00000001);
+                if (ratio < 0.45) mag = 'S'; // Small / Compression
+                else if (ratio < 1.15) mag = 'M'; // Medium / Standard
+                else if (ratio < 2.25) mag = 'L'; // Large / Expansion
+                else mag = 'X'; // Extreme Volatility Spike
+
+                return { dir, mag, code: dir + '_' + mag };
+            }
+
+            calculateAtrs(candles, period = 14) {
+                const atrs = new Array(candles.length);
+                if (candles.length === 0) return atrs;
+                atrs[0] = Math.max(candles[0].high - candles[0].low, 0.00000001);
+
+                let trSum = 0;
+                for (let i = 1; i < candles.length; i++) {
+                    const c = candles[i], p = candles[i - 1];
+                    const tr = Math.max(c.high - c.low, Math.max(Math.abs(c.high - p.close), Math.abs(c.low - p.close)));
+                    if (i <= period) {
+                        trSum += tr;
+                        atrs[i] = trSum / i;
+                    } else {
+                        atrs[i] = (atrs[i - 1] * (period - 1) + tr) / period;
+                    }
+                }
+                return atrs;
+            }
+
+            train(candles) {
+                if (!candles || candles.length < 20) return;
+                this.root = { visits: 0, children: {}, nextTransitions: {}, stats: {} };
+                const atrs = this.calculateAtrs(candles, 14);
+                const tokens = candles.map((c, i) => this.tokenize(c, atrs[i]));
+
+                for (let i = 0; i < tokens.length - 1; i++) {
+                    let node = this.root;
+                    node.visits++;
+                    const end = Math.min(tokens.length - 1, i + this.maxPrefixDepth);
+
+                    for (let j = i; j <= end; j++) {
+                        const tok = tokens[j].code;
+                        if (!node.children[tok]) {
+                            node.children[tok] = { visits: 0, children: {}, nextTransitions: {}, stats: {} };
+                        }
+                        node = node.children[tok];
+                        node.visits++;
+
+                        if (j + 1 < tokens.length) {
+                            const nextTok = tokens[j + 1].code;
+                            node.nextTransitions[nextTok] = (node.nextTransitions[nextTok] || 0) + 1;
+
+                            const currC = candles[j], nextC = candles[j + 1];
+                            const deltaPct = ((nextC.close - currC.close) / currC.close) * 100.0;
+                            if (!node.stats[nextTok]) {
+                                node.stats[nextTok] = { sumDelta: 0, count: 0 };
+                            }
+                            node.stats[nextTok].sumDelta += deltaPct;
+                            node.stats[nextTok].count++;
+                        }
+                    }
+                }
+            }
+
+            autofill(recentCandles, currentAtr, futureSteps = 5) {
+                if (!recentCandles || recentCandles.length === 0 || futureSteps <= 0) return null;
+                const atrs = this.calculateAtrs(recentCandles, 14);
+                const prefixTokens = [];
+                const startIdx = Math.max(0, recentCandles.length - this.maxPrefixDepth);
+                for (let i = startIdx; i < recentCandles.length; i++) {
+                    prefixTokens.push(this.tokenize(recentCandles[i], atrs[i]));
+                }
+
+                // Suffix Backoff Search
+                let activeNode = null;
+                let matchedSubPrefix = [];
+
+                for (let shift = 0; shift < prefixTokens.length; shift++) {
+                    const candidate = prefixTokens.slice(shift);
+                    let curr = this.root;
+                    let match = true;
+
+                    for (let t of candidate) {
+                        curr = curr.children[t.code];
+                        if (!curr || curr.visits < 2) {
+                            match = false;
+                            break;
+                        }
+                    }
+
+                    if (match && curr && Object.keys(curr.nextTransitions).length > 0) {
+                        activeNode = curr;
+                        matchedSubPrefix = candidate;
+                        break;
+                    }
+                }
+
+                if (!activeNode) {
+                    const lastTok = prefixTokens[prefixTokens.length - 1].code;
+                    activeNode = this.root.children[lastTok];
+                    matchedSubPrefix = [prefixTokens[prefixTokens.length - 1]];
+                    if (!activeNode) return null;
+                }
+
+                const lastKnown = recentCandles[recentCandles.length - 1];
+                let simPrice = lastKnown.close;
+                let simTime = lastKnown.timeSeconds;
+                const stepDuration = recentCandles.length > 1 ? (recentCandles[1].timeSeconds - recentCandles[0].timeSeconds) : 900;
+
+                const predictedPath = [];
+                let walker = activeNode;
+                let totalConfSum = 0;
+
+                for (let step = 1; step <= futureSteps; step++) {
+                    let bestNext = null, maxCount = -1;
+                    for (let [candCode, count] of Object.entries(walker.nextTransitions || {})) {
+                        if (count > maxCount) {
+                            maxCount = count;
+                            bestNext = candCode;
+                        }
+                    }
+
+                    if (!bestNext) {
+                        // Unigram fallback from root
+                        for (let [candCode, count] of Object.entries(this.root.children || {})) {
+                            if (count.visits > maxCount) {
+                                maxCount = count.visits;
+                                bestNext = candCode;
+                            }
+                        }
+                    }
+                    if (!bestNext) break;
+
+                    const occurrences = walker.nextTransitions[bestNext] || 1;
+                    const conf = walker.visits > 0 ? (occurrences / walker.visits) * 100 : 50;
+                    totalConfSum += conf;
+
+                    const avgDelta = (walker.stats[bestNext] && walker.stats[bestNext].count > 0)
+                        ? walker.stats[bestNext].sumDelta / walker.stats[bestNext].count
+                        : (bestNext.startsWith('G') ? 0.35 : (bestNext.startsWith('R') ? -0.35 : 0.0));
+
+                    const magChar = bestNext.split('_')[1];
+                    const magMultiplier = magChar === 'S' ? 0.35 : (magChar === 'M' ? 0.85 : (magChar === 'L' ? 1.65 : 2.80));
+
+                    const expOpen = simPrice;
+                    const expClose = expOpen * (1.0 + (avgDelta / 100.0));
+                    const estRange = Math.max(currentAtr * magMultiplier, Math.abs(expClose - expOpen) * 1.25);
+                    const expHigh = Math.max(expOpen, expClose) + (estRange * 0.20);
+                    const expLow = Math.min(expOpen, expClose) - (estRange * 0.20);
+
+                    simTime += stepDuration;
+                    simPrice = expClose;
+
+                    predictedPath.push({
+                        stepIndex: step,
+                        time: simTime,
+                        tokenCode: bestNext,
+                        open: expOpen,
+                        high: expHigh,
+                        low: expLow,
+                        close: expClose,
+                        deltaPct: avgDelta,
+                        conf: conf,
+                        occurrences: occurrences
+                    });
+
+                    walker = walker.children[bestNext] || this.root.children[bestNext] || walker;
+                }
+
+                const cumulativeReturn = ((simPrice - lastKnown.close) / lastKnown.close) * 100.0;
+                const overallConfidence = predictedPath.length > 0 ? totalConfSum / predictedPath.length : 0;
+
+                return {
+                    matchedPrefix: matchedSubPrefix,
+                    prefixMatchCount: activeNode.visits,
+                    predictedPath: predictedPath,
+                    targetPrice: simPrice,
+                    cumulativeReturn: cumulativeReturn,
+                    overallConfidence: overallConfidence
+                };
+            }
+        }
+
+        // =========================================================================================
+        // UI & REAL-TIME CHART RENDERING ENGINE
+        // =========================================================================================
+        let currentCoin = 'BTCUSDT';
+        let currentInterval = '15m';
+        let predictionSteps = 5;
+        let chart = null;
+        let candleSeries = null;
+        let ghostSeries = null;
+        let targetPriceLine = null;
+        let activeWs = null;
+        let liveCandles = [];
+
+        const predictor = new DoubleTriePredictor(5);
+
+        function formatPrice(p) {
+            if (p === undefined || isNaN(p)) return '0.00';
+            if (p >= 1000) return p.toFixed(2);
+            if (p >= 1) return p.toFixed(4);
+            if (p >= 0.01) return p.toFixed(6);
+            return p.toFixed(8);
+        }
+
+        // Initialize Lightweight Chart
+        function initChart() {
+            const container = document.getElementById('chart-viewport');
+            chart = LightweightCharts.createChart(container, {
+                layout: { background: { color: '#0b0e14' }, textColor: '#8e96aa' },
+                grid: { vertLines: { color: '#131826' }, horzLines: { color: '#131826' } },
+                crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+                rightPriceScale: { borderColor: '#1e2638' },
+                timeScale: { borderColor: '#1e2638', timeVisible: true, secondsVisible: false }
+            });
+
+            // 1. Solid Historical Series
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#089981', downColor: '#f23645',
+                borderVisible: false,
+                wickUpColor: '#089981', wickDownColor: '#f23645'
+            });
+
+            // 2. Ghost Predicted Forward Series (Semi-transparent with glowing borders)
+            ghostSeries = chart.addCandlestickSeries({
+                upColor: 'rgba(56, 189, 248, 0.45)',
+                downColor: 'rgba(244, 63, 94, 0.45)',
+                borderVisible: true,
+                borderColor: '#38bdf8',
+                wickUpColor: '#38bdf8',
+                wickDownColor: '#f43f5e'
+            });
+
+            chart.subscribeCrosshairMove(param => {
+                if (!param.time) return;
+                const candle = param.seriesData.get(candleSeries) || param.seriesData.get(ghostSeries);
+                if (candle) {
+                    document.getElementById('hud-o').innerText = formatPrice(candle.open);
+                    document.getElementById('hud-h').innerText = formatPrice(candle.high);
+                    document.getElementById('hud-l').innerText = formatPrice(candle.low);
+                    document.getElementById('hud-c').innerText = formatPrice(candle.close);
+                    const isGhost = param.seriesData.get(ghostSeries) !== undefined;
+                    document.getElementById('hud-type').innerText = isGhost ? '🔮 TRIE FORECAST BAR' : 'HISTORICAL BAR';
+                    document.getElementById('hud-type').style.color = isGhost ? '#38bdf8' : '#94a3b8';
+                }
+            });
+
+            window.addEventListener('resize', () => {
+                chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+            });
+        }
+
+        // Fetch Candles, Train Trie & Render Autofill Projection
+        async function loadAndPredict() {
+            try {
+                document.getElementById('verdict-badge').innerText = 'TRAINING TRIE...';
+                const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=${currentCoin}&interval=${currentInterval}&limit=500`);
+                const raw = await res.json();
+                liveCandles = raw.map(cols => ({
+                    timeSeconds: Math.floor(cols[0] / 1000),
+                    open: parseFloat(cols[1]),
+                    high: parseFloat(cols[2]),
+                    low: parseFloat(cols[3]),
+                    close: parseFloat(cols[4]),
+                    volume: parseFloat(cols[5])
+                }));
+
+                // Train the Double Trie on historical bars
+                predictor.train(liveCandles);
+
+                // Set Historical Candles on Chart
+                candleSeries.setData(liveCandles.map(c => ({
+                    time: c.timeSeconds, open: c.open, high: c.high, low: c.low, close: c.close
+                })));
+
+                const lastC = liveCandles[liveCandles.length - 1];
+                document.getElementById('live-price').innerText = '$' + formatPrice(lastC.close);
+
+                // Generate Double Trie Prediction
+                const atrs = predictor.calculateAtrs(liveCandles, 14);
+                const currentAtr = atrs[atrs.length - 1];
+                const forecast = predictor.autofill(liveCandles, currentAtr, predictionSteps);
+
+                renderForecast(forecast);
+                chart.timeScale().fitContent();
+
+            } catch (e) {
+                console.error('Error loading data', e);
+            }
+        }
+
+        // Render the Predicted Ghost Candles and Telemetry
+        function renderForecast(forecast) {
+            if (!forecast) return;
+
+            // 1. Render Ghost Candles on Chart
+            const ghostData = forecast.predictedPath.map(p => ({
+                time: p.time, open: p.open, high: p.high, low: p.low, close: p.close
+            }));
+            ghostSeries.setData(ghostData);
+
+            // Add markers on predicted bars showing token and confidence
+            const markers = forecast.predictedPath.map(p => ({
+                time: p.time,
+                position: p.close >= p.open ? 'aboveBar' : 'belowBar',
+                color: p.close >= p.open ? '#38bdf8' : '#f43f5e',
+                shape: p.close >= p.open ? 'arrowUp' : 'arrowDown',
+                text: `+${p.stepIndex} [${p.tokenCode}] ${p.conf.toFixed(0)}%`
+            }));
+            ghostSeries.setMarkers(markers);
+
+            // 2. Draw Target Price Line
+            if (targetPriceLine) {
+                try { ghostSeries.removePriceLine(targetPriceLine); } catch(e){}
+            }
+            targetPriceLine = ghostSeries.createPriceLine({
+                price: forecast.targetPrice,
+                color: forecast.cumulativeReturn >= 0 ? '#00e676' : '#f43f5e',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: `FORECAST TARGET $${formatPrice(forecast.targetPrice)} (${forecast.cumulativeReturn >= 0 ? '+' : ''}${forecast.cumulativeReturn.toFixed(2)}%)`
+            });
+
+            // 3. Update Subbar Telemetry
+            const prefixContainer = document.getElementById('prefix-matched-tokens');
+            prefixContainer.innerHTML = '';
+            forecast.matchedPrefix.forEach(t => {
+                const span = document.createElement('span');
+                span.className = 'tag-token';
+                span.innerText = t.code;
+                prefixContainer.appendChild(span);
+            });
+            document.getElementById('prefix-matches-count').innerText = `(${forecast.prefixMatchCount} occurrences)`;
+
+            const autofillContainer = document.getElementById('autofill-path-tokens');
+            autofillContainer.innerHTML = '';
+            forecast.predictedPath.forEach(p => {
+                const span = document.createElement('span');
+                span.className = 'tag-token future';
+                span.innerText = p.tokenCode;
+                autofillContainer.appendChild(span);
+            });
+
+            const verdictElem = document.getElementById('verdict-badge');
+            const isBull = forecast.cumulativeReturn >= 0;
+            verdictElem.className = `badge-verdict ${isBull ? 'bg-bull-badge' : 'bg-bear-badge'}`;
+            verdictElem.innerText = `${isBull ? '▲ BULLISH AUTOFILL' : '▼ BEARISH AUTOFILL'} (${isBull ? '+' : ''}${forecast.cumulativeReturn.toFixed(2)}% | Conf: ${forecast.overallConfidence.toFixed(1)}%)`;
+
+            document.getElementById('target-price-val').innerText = `$${formatPrice(forecast.targetPrice)}`;
+            document.getElementById('target-price-val').className = `tele-val ${isBull ? 'text-bull' : 'text-bear'}`;
+
+            // 4. Populate Right Drawer Breakdown Cards
+            const drawerContainer = document.getElementById('step-cards-container');
+            drawerContainer.innerHTML = '';
+            document.getElementById('total-horizon-label').innerText = `Next ${forecast.predictedPath.length} Bars`;
+
+            forecast.predictedPath.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'step-card';
+                const sign = p.deltaPct >= 0 ? '+' : '';
+                const deltaColor = p.deltaPct >= 0 ? '#00e676' : '#ff1744';
+
+                card.innerHTML = `
+                    <div class="step-row">
+                        <span class="step-num">&#128302; STEP +${p.stepIndex}: <b>[${p.tokenCode}]</b></span>
+                        <span class="step-delta" style="color:${deltaColor}">${sign}${p.deltaPct.toFixed(2)}%</span>
+                    </div>
+                    <div class="step-ohlc">
+                        O: <b>$${formatPrice(p.open)}</b> &bull; C: <b>$${formatPrice(p.close)}</b>
+                    </div>
+                    <div class="step-ohlc">
+                        H: <b>$${formatPrice(p.high)}</b> &bull; L: <b>$${formatPrice(p.low)}</b>
+                    </div>
+                    <div class="step-row" style="margin-top:2px;">
+                        <span style="font-size:9px; color:#64748b;">Confidence (${p.occurrences} matches):</span>
+                        <span style="font-size:10px; font-weight:800; color:#38bdf8;">${p.conf.toFixed(1)}%</span>
+                    </div>
+                    <div class="conf-bar-bg">
+                        <div class="conf-bar-fill" style="width:${Math.min(100, p.conf)}%"></div>
+                    </div>
+                `;
+                drawerContainer.appendChild(card);
+            });
+        }
+
+        // Real-Time Binance WebSocket Tick Stream
+        function initWebSocket() {
+            if (activeWs) {
+                try { activeWs.close(); } catch(e){}
+            }
+            try {
+                const streamUrl = `wss://stream.binance.com:9443/ws/${currentCoin.toLowerCase()}@kline_${currentInterval}`;
+                activeWs = new WebSocket(streamUrl);
+
+                activeWs.onmessage = (event) => {
+                    const msg = JSON.parse(event.data);
+                    if (msg.e === 'kline') {
+                        const k = msg.k;
+                        const candle = {
+                            time: Math.floor(k.t / 1000),
+                            open: parseFloat(k.o),
+                            high: parseFloat(k.h),
+                            low: parseFloat(k.l),
+                            close: parseFloat(k.c),
+                            volume: parseFloat(k.v)
+                        };
+
+                        candleSeries.update(candle);
+                        document.getElementById('live-price').innerText = '$' + formatPrice(candle.close);
+
+                        // If bar closes, update training dataset and re-trigger instant predictive autofill!
+                        if (k.x === true) {
+                            liveCandles.push(candle);
+                            if (liveCandles.length > 500) liveCandles.shift();
+                            predictor.train(liveCandles);
+                            const atrs = predictor.calculateAtrs(liveCandles, 14);
+                            const forecast = predictor.autofill(liveCandles, atrs[atrs.length - 1], predictionSteps);
+                            renderForecast(forecast);
+                        }
+                    }
+                };
+
+                activeWs.onclose = () => setTimeout(initWebSocket, 3000);
+            } catch(e) {
+                console.error('WebSocket connection failed', e);
+            }
+        }
+
+        // Control Switchers
+        function switchCoin(sym) {
+            currentCoin = sym;
+            document.querySelectorAll('.btn-coin').forEach(b => b.classList.toggle('active', b.innerText === sym.replace('USDT','')));
+            loadAndPredict();
+            initWebSocket();
+        }
+
+        function switchInterval(tf) {
+            currentInterval = tf;
+            document.querySelectorAll('.controls-group .btn-group:first-child .btn-opt').forEach(b => b.classList.toggle('active', b.innerText === tf.toUpperCase()));
+            loadAndPredict();
+            initWebSocket();
+        }
+
+        function setPredictionSteps(n) {
+            predictionSteps = n;
+            document.querySelectorAll('.controls-group .btn-group:last-child .btn-opt').forEach(b => b.classList.toggle('active', b.innerText === `${n} BARS`));
+            const atrs = predictor.calculateAtrs(liveCandles, 14);
+            const forecast = predictor.autofill(liveCandles, atrs[atrs.length - 1], predictionSteps);
+            renderForecast(forecast);
+        }
+
+        // Start Up
+        window.onload = () => {
+            initChart();
+            loadAndPredict();
+            initWebSocket();
+        };
+    </script>
+</body>
+</html>
+
