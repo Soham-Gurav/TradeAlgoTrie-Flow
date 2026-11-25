@@ -72,6 +72,15 @@ export default function MarketCentsApp() {
   const [flowEnabled, setFlowEnabled] = useState<boolean>(true);
   const [trieData, setTrieData] = useState<any>(null);
 
+  // Counting Bloom Filter & Randomized Quickselect State
+  const [bloomSignature, setBloomSignature] = useState<string>("AUTO");
+  const [bloomCustomInput, setBloomCustomInput] = useState<string>("");
+  const [bloomResult, setBloomResult] = useState<any>(null);
+  const [quickselectSize, setQuickselectSize] = useState<number>(10000);
+  const [quickselectData, setQuickselectData] = useState<any>(null);
+  const [quickselectNonce, setQuickselectNonce] = useState<number>(0);
+  const [liveCoinVar95Pct, setLiveCoinVar95Pct] = useState<number | null>(null);
+
   // Flow Network State
   const [takerBuyVol, setTakerBuyVol] = useState<number>(0);
   const [takerSellVol, setTakerSellVol] = useState<number>(0);
@@ -278,6 +287,11 @@ export default function MarketCentsApp() {
         if (formatted.length > 0) {
           const last = formatted[formatted.length - 1];
           setCurrentPrice(last.close);
+          const absMoves = formatted
+            .map((c: any) => (c.open > 0 ? Math.abs(((c.close - c.open) / c.open) * 100) : 0))
+            .sort((a: number, b: number) => a - b);
+          const idx95 = Math.min(absMoves.length - 1, Math.round(0.95 * (absMoves.length - 1)));
+          setLiveCoinVar95Pct(absMoves[idx95]);
         }
       } catch (e) {
         console.error("Kline fetch error:", e);
@@ -351,6 +365,52 @@ export default function MarketCentsApp() {
 
     queryTrieBackend();
   }, [selectedPair, trieEnabled, timeframe, trieHorizon, currentPage, hasSearched]);
+
+  // 4b. Query 4-Bit Counting Bloom Filter from Java Backend (:8085/api/bloom/screen)
+  const resolvedBloomSignature = (() => {
+    if (bloomSignature !== "AUTO") return bloomSignature;
+    if (solverResult?.dirTitle?.includes("ABSORPTION")) return "SPOOF_BID_ICEBERG_LARGE";
+    if (solverResult?.dirTitle?.includes("BREAKOUT") || solverResult?.dirTitle?.includes("BREAKDOWN")) {
+      return "LIQUIDITY_VACUUM_PUMP";
+    }
+    if (Math.abs(takerBuyVol - takerSellVol) > 2 && (orderBookAsks[0]?.qty || 0) > 5) {
+      return "DELTA_DIVERGENCE_TRAP";
+    }
+    return "ORGANIC_TWO_SIDED_FLOW";
+  })();
+
+  useEffect(() => {
+    if (currentPage !== "market") return;
+    const screenPattern = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/bloom/screen?signature=${encodeURIComponent(resolvedBloomSignature)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setBloomResult(data);
+        }
+      } catch (err) {
+        console.warn("Java Bloom API query error:", err);
+      }
+    };
+    screenPattern();
+  }, [currentPage, resolvedBloomSignature]);
+
+  // 4c. Query Randomized Quickselect VaR Benchmark from Java Backend (:8085/api/stats/benchmark)
+  useEffect(() => {
+    if (currentPage !== "market") return;
+    const runQuickselectBenchmark = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/stats/benchmark?size=${quickselectSize}`);
+        if (res.ok) {
+          const data = await res.json();
+          setQuickselectData(data);
+        }
+      } catch (err) {
+        console.warn("Java Quickselect API query error:", err);
+      }
+    };
+    runQuickselectBenchmark();
+  }, [currentPage, quickselectSize, quickselectNonce, selectedPair]);
 
   // 5. Connect Real Binance WebSocket for Order Book Depth & Taker Trades (Flow Network)
   useEffect(() => {
@@ -1642,6 +1702,275 @@ export default function MarketCentsApp() {
                       },
                     ]
                   : []),
+                {
+                  id: "market-bloom",
+                  colSpan: 2,
+                  rowSpan: 2,
+                  content: (
+                    <div className="flex flex-col h-full justify-between">
+                      <div className="flex justify-between items-start pb-2.5 border-b border-white/10">
+                        <div>
+                          <span className="text-[10px] font-mono text-amber-400 uppercase tracking-widest block font-bold">UNIT 6 / CO5 FORMULATION</span>
+                          <h4 className="text-base font-bold text-white">4-Bit Counting Bloom Filter Trap Screener</h4>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold">
+                          O(k) Zero False Negatives
+                        </span>
+                      </div>
+
+                      {/* Signature Selector & Custom Test Input */}
+                      <div className="flex flex-col gap-2 py-2.5 border-b border-white/10">
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
+                          {[
+                            { id: "AUTO", label: "Auto (Live Flow)" },
+                            { id: "SPOOF_BID_ICEBERG_LARGE", label: "Spoof Iceberg" },
+                            { id: "STOP_HUNT_SWEEP_REVERSAL", label: "Stop-Hunt Sweep" },
+                            { id: "LIQUIDITY_VACUUM_PUMP", label: "Vacuum Pump" },
+                            { id: "ORGANIC_TWO_SIDED_FLOW", label: "Clean Flow" },
+                          ].map((preset) => (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setBloomSignature(preset.id);
+                              }}
+                              className={`px-2 py-1 rounded-lg border transition font-bold ${
+                                bloomSignature === preset.id
+                                  ? "bg-amber-400 text-black border-amber-400"
+                                  : "bg-[#0e1118] text-neutral-300 border-white/10 hover:border-white/30"
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={bloomCustomInput}
+                            onChange={(e) => setBloomCustomInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && bloomCustomInput.trim()) {
+                                setBloomSignature(bloomCustomInput.trim().toUpperCase());
+                              }
+                            }}
+                            placeholder="Test custom signature (e.g. LAYERED_WALL_CANCELLATION)..."
+                            className="flex-1 bg-[#0e1118] border border-white/15 rounded-lg px-2.5 py-1.5 text-[11px] font-mono text-white placeholder-neutral-500 focus:outline-none focus:border-amber-400/70"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (bloomCustomInput.trim()) setBloomSignature(bloomCustomInput.trim().toUpperCase());
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-white text-black font-mono font-bold text-[11px] hover:bg-neutral-200 transition"
+                          >
+                            Screen
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Live Screening Verdict & Hash Bucket Visualization */}
+                      <div className="flex-1 flex flex-col justify-center gap-3 py-2 font-mono">
+                        <div className={`p-3 rounded-xl border ${
+                          bloomResult?.possiblyPresent
+                            ? "bg-amber-500/10 border-amber-500/40"
+                            : "bg-emerald-500/10 border-emerald-500/30"
+                        }`}>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="text-neutral-400 uppercase text-[10px]">Active Signature</span>
+                            <span className={`font-bold text-[11px] px-2 py-0.5 rounded ${
+                              bloomResult?.possiblyPresent ? "bg-amber-400 text-black" : "bg-emerald-500 text-black"
+                            }`}>
+                              {bloomResult ? (bloomResult.possiblyPresent ? "TRAP FLAGGED" : "CLEAR (SAFE)") : "SYNCING..."}
+                            </span>
+                          </div>
+                          <div className="text-sm font-bold text-white truncate">{bloomResult?.signature || resolvedBloomSignature}</div>
+                          <p className="text-[11px] text-neutral-300 mt-1 leading-snug">
+                            {bloomResult?.recommendation || "Connecting to Java Counting Bloom Filter (:8085)..."}
+                          </p>
+                        </div>
+
+                        {/* Hash Bucket Match Bar */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-[10px] text-neutral-400">
+                            <span>FNV-1a Hash Buckets Matched</span>
+                            <span className="text-white font-bold">
+                              {bloomResult ? `${bloomResult.matchingHashBuckets} / ${bloomResult.numHashFunctions} buckets > 0` : "—"}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-7 gap-1.5">
+                            {Array.from({ length: bloomResult?.numHashFunctions || 7 }).map((_, idx) => {
+                              const hit = bloomResult && idx < bloomResult.matchingHashBuckets;
+                              return (
+                                <div
+                                  key={idx}
+                                  className={`h-2.5 rounded-sm transition-all ${
+                                    hit
+                                      ? bloomResult.possiblyPresent
+                                        ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]"
+                                        : "bg-sky-400"
+                                      : "bg-white/10"
+                                  }`}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer Telemetry */}
+                      <div className="pt-2.5 border-t border-white/10 grid grid-cols-3 gap-2 text-xs font-mono">
+                        <div>
+                          <span className="text-neutral-500 block text-[10px]">False Pos Rate</span>
+                          <span className="text-white font-bold">
+                            {bloomResult ? `${(bloomResult.theoreticalFalsePositiveRate * 100).toFixed(4)}%` : "—"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-500 block text-[10px]">Bit Array / Traps</span>
+                          <span className="text-white font-bold">
+                            {bloomResult ? `${bloomResult.bitArraySize}b / ${bloomResult.elementCount}` : "—"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-neutral-500 block text-[10px]">Fill Ratio</span>
+                          <span className="text-emerald-400 font-bold">
+                            {bloomResult ? `${(bloomResult.capacityFillRatio * 100).toFixed(2)}%` : "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  id: "market-quickselect",
+                  colSpan: 2,
+                  rowSpan: 2,
+                  content: (
+                    <div className="flex flex-col h-full justify-between">
+                      <div className="flex justify-between items-start pb-2.5 border-b border-white/10">
+                        <div>
+                          <span className="text-[10px] font-mono text-emerald-400 uppercase tracking-widest block font-bold">UNIT 1 & 6 FORMULATION</span>
+                          <h4 className="text-base font-bold text-white">Randomized Quickselect 95th-Percentile VaR</h4>
+                        </div>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">
+                          Expected O(N)
+                        </span>
+                      </div>
+
+                      {/* Controls: Sample Size N + Re-Run */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 py-2.5 border-b border-white/10 text-[10px] font-mono">
+                        <div className="flex items-center gap-1">
+                          <span className="text-neutral-400 mr-1">Ticks (N):</span>
+                          {[5000, 10000, 25000, 50000].map((sz) => (
+                            <button
+                              key={sz}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setQuickselectSize(sz);
+                              }}
+                              className={`px-2 py-1 rounded-lg border transition font-bold ${
+                                quickselectSize === sz
+                                  ? "bg-emerald-500 text-black border-emerald-500"
+                                  : "bg-[#0e1118] text-neutral-300 border-white/10 hover:border-white/30"
+                              }`}
+                            >
+                              {(sz / 1000).toFixed(0)}k
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setQuickselectNonce((n) => n + 1);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-white text-black font-bold hover:bg-neutral-200 transition"
+                        >
+                          Re-Run Benchmark
+                        </button>
+                      </div>
+
+                      {/* Latency Comparison Bars & Live Coin VaR */}
+                      <div className="flex-1 flex flex-col justify-center gap-3 py-2 font-mono">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-3 rounded-xl bg-[#0a0d14] border border-white/10">
+                            <span className="text-[10px] text-neutral-400 block uppercase">Java Speedup Factor</span>
+                            <span className="text-2xl font-extrabold text-emerald-400">
+                              {quickselectData ? `${quickselectData.speedupFactor.toFixed(2)}×` : "—"}
+                            </span>
+                            <span className="text-[10px] text-neutral-400 block mt-0.5">Faster than Full Sort</span>
+                          </div>
+                          <div className="p-3 rounded-xl bg-[#0a0d14] border border-white/10">
+                            <span className="text-[10px] text-neutral-400 block uppercase">{selectedPair} 95% Bar Move</span>
+                            <span className="text-2xl font-extrabold text-sky-400">
+                              {liveCoinVar95Pct !== null ? `±${liveCoinVar95Pct.toFixed(2)}%` : "—"}
+                            </span>
+                            <span className="text-[10px] text-neutral-400 block mt-0.5">Across {barDepth} live {timeframe.toUpperCase()} bars</span>
+                          </div>
+                        </div>
+
+                        {/* Visual Latency Bar Comparison */}
+                        <div className="space-y-2 text-[11px]">
+                          <div>
+                            <div className="flex justify-between mb-1">
+                              <span className="text-emerald-400 font-bold">Randomized Quickselect O(N)</span>
+                              <span className="text-white font-bold">
+                                {quickselectData ? `${(quickselectData.quickselectTimeNs / 1000).toFixed(1)} µs` : "—"}
+                              </span>
+                            </div>
+                            <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
+                              <div
+                                className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                                style={{
+                                  width: quickselectData && quickselectData.sortBaselineTimeNs > 0
+                                    ? `${Math.max(8, Math.min(100, (quickselectData.quickselectTimeNs / quickselectData.sortBaselineTimeNs) * 100))}%`
+                                    : "20%",
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="flex justify-between mb-1">
+                              <span className="text-rose-400 font-bold">Full Arrays.sort O(N log N)</span>
+                              <span className="text-white font-bold">
+                                {quickselectData ? `${(quickselectData.sortBaselineTimeNs / 1000).toFixed(1)} µs` : "—"}
+                              </span>
+                            </div>
+                            <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
+                              <div className="h-full bg-rose-500/80 rounded-full w-full" />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer Telemetry */}
+                      <div className="pt-2.5 border-t border-white/10 grid grid-cols-3 gap-2 text-xs font-mono">
+                        <div>
+                          <span className="text-neutral-500 block text-[10px]">Sample N</span>
+                          <span className="text-white font-bold">
+                            {quickselectData ? quickselectData.arraySize.toLocaleString() : quickselectSize.toLocaleString()}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-neutral-500 block text-[10px]">95th Quantile</span>
+                          <span className="text-white font-bold">
+                            {quickselectData ? quickselectData.selectedValue.toFixed(2) : "—"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-neutral-500 block text-[10px]">Aux Space</span>
+                          <span className="text-emerald-400 font-bold">O(1) In-Place</span>
+                        </div>
+                      </div>
+                    </div>
+                  ),
+                },
               ]}
             />
           </div>
