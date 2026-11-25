@@ -16,8 +16,9 @@ import { createChart, CandlestickSeries } from "lightweight-charts";
 import MagicBento, { type MagicBentoItem } from "./components/MagicBento";
 import CoinLogo from "./components/CoinLogo";
 import SimulationStudio from "./components/SimulationStudio";
+import NewsTerminal from "./components/NewsTerminal";
 
-const BACKEND_URL = "http://localhost:8085";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8085";
 
 interface BinanceTicker {
   symbol: string;
@@ -41,7 +42,7 @@ interface MarketItem {
 }
 
 export default function MarketCentsApp() {
-  const [currentPage, setCurrentPage] = useState<"home" | "market" | "simulation">("home");
+  const [currentPage, setCurrentPage] = useState<"home" | "market" | "simulation" | "news">("home");
   const [timeStr, setTimeStr] = useState<string>("");
   const [scrolled, setScrolled] = useState<boolean>(false);
   const [mounted, setMounted] = useState<boolean>(false);
@@ -1010,7 +1011,7 @@ export default function MarketCentsApp() {
 
       {/* TAYLOR EDITORIAL TOP NAVBAR (Full-Width Header) */}
       <header
-        className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-8 md:px-14 py-6 transition-all duration-300 pointer-events-auto ${
+        className={`fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 sm:px-8 md:px-14 py-5 md:py-6 transition-all duration-300 pointer-events-auto ${
           scrolled
             ? "bg-black/85 backdrop-blur-md border-b border-white/10"
             : "bg-transparent backdrop-blur-none"
@@ -1028,37 +1029,32 @@ export default function MarketCentsApp() {
         </div>
 
         {/* Center Navigation Links */}
-        <nav className="flex items-center gap-8 text-xs md:text-sm font-semibold tracking-wide">
-          <button
-            onClick={() => setCurrentPage("home")}
-            className={`transition relative py-1 ${
-              currentPage === "home"
-                ? "text-white after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1.5px] after:bg-white font-bold"
-                : "text-white/60 hover:text-white"
-            }`}
-          >
-            Home
-          </button>
-          <button
-            onClick={() => setCurrentPage("market")}
-            className={`transition relative py-1 ${
-              currentPage === "market"
-                ? "text-white after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1.5px] after:bg-white font-bold"
-                : "text-white/60 hover:text-white"
-            }`}
-          >
-            Market
-          </button>
-          <button
-            onClick={() => setCurrentPage("simulation")}
-            className={`transition relative py-1 ${
-              currentPage === "simulation"
-                ? "text-white after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1.5px] after:bg-white font-bold"
-                : "text-white/60 hover:text-white"
-            }`}
-          >
-            Simulation
-          </button>
+        <nav aria-label="Primary" className="flex items-center gap-4 sm:gap-8 text-xs md:text-sm font-semibold tracking-wide">
+          {(
+            [
+              { id: "home", label: "Home" },
+              { id: "market", label: "Market" },
+              { id: "simulation", label: "Simulation" },
+              { id: "news", label: "News" },
+            ] as const
+          ).map((navItem) => {
+            const isActive = currentPage === navItem.id;
+            return (
+              <button
+                key={navItem.id}
+                type="button"
+                aria-current={isActive ? "page" : undefined}
+                onClick={() => setCurrentPage(navItem.id)}
+                className={`transition relative py-1 ${
+                  isActive
+                    ? "text-white after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1.5px] after:bg-white font-bold"
+                    : "text-white/60 hover:text-white"
+                }`}
+              >
+                {navItem.label}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Empty Spacer to preserve exact center alignment */}
@@ -2013,6 +2009,21 @@ export default function MarketCentsApp() {
         <SimulationStudio
           selectedPair={selectedPair}
           onSelectPair={handleSelectCoin}
+          availablePairs={allTickers.map((t) => t.pair)}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* PAGE 4: CRYPTO NEWS & UNIT 2 PRIORITY QUEUE INTELLIGENCE                  */}
+      {/* ========================================================================= */}
+      {currentPage === "news" && (
+        <NewsTerminal
+          selectedPair={selectedPair}
+          onSelectPair={handleSelectCoin}
+          onNavigateToMarket={(pair) => {
+            handleSelectCoin(pair);
+            setCurrentPage("market");
+          }}
           availablePairs={allTickers.map((t) => t.pair)}
         />
       )}

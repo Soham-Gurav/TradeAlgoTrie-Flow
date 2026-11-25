@@ -3,6 +3,9 @@ package algo.test;
 import algo.approx.MetricTspApproximator;
 import algo.bloom.OrderFlowBloomFilter;
 import algo.flow.OrderFlowNetwork;
+import algo.priority.CryptoKeywordAnalyzer;
+import algo.priority.CryptoNewsPriorityQueue;
+import algo.priority.NewsModels.*;
 import algo.sim.MonteCarloSimulator;
 import algo.stats.RandomizedQuickselect;
 import algo.trie.DoubleTriePredictor;
@@ -76,6 +79,13 @@ public class AlgorithmTestSuite {
         list.add(testTspTwoApproximationGuarantee());
         list.add(testTspValidHamiltonianCycle());
         list.add(testTspScaledRuntimeComparison());
+
+        // 7. Crypto News Binary Max-Heap Priority Queue & Keyword Tests (Unit 2)
+        list.add(testPriorityQueueEmptyAndSingleBoundary());
+        list.add(testPriorityQueueMaxHeapOrderAndTieBreaker());
+        list.add(testPriorityQueueBuildHeapAndIncreasePriority());
+        list.add(testCryptoKeywordRelevanceGateAndFalsePositiveGuard());
+        list.add(testPriorityQueueScaledTopKBenchmark());
 
         int passed = 0;
         for (TestResult r : list) {
@@ -492,6 +502,121 @@ public class AlgorithmTestSuite {
         }
         return new TestResult("Unit 5: Metric TSP", "T30: Scaled 2-Approx vs Exact Held-Karp (N=6,9,11)", passed,
                 "Empirical approx ratios: " + details.toString().trim(), System.nanoTime() - t0);
+    }
+
+    // --- UNIT 2: CRYPTO NEWS PRIORITY QUEUE & KEYWORD TESTS ---
+    private TestResult testPriorityQueueEmptyAndSingleBoundary() {
+        long t0 = System.nanoTime();
+        CryptoNewsPriorityQueue pq = new CryptoNewsPriorityQueue();
+        boolean emptyOk = pq.isEmpty() && pq.peekMax() == null && pq.extractMax() == null && pq.extractTopK(5).isEmpty();
+
+        ScoredNewsItem single = mockScoredNews("n-1", "Bitcoin ETF inflow", 88.5, 1_760_000_000L);
+        pq.insert(single);
+        boolean singleOk = pq.size() == 1 && pq.peekMax() == single && pq.extractMax() == single && pq.isEmpty();
+        boolean passed = emptyOk && singleOk;
+        return new TestResult("Unit 2: Priority Queue", "T31: Empty & Single-Item Boundary", passed,
+                passed ? "Empty queue returned null/empty safely and single-item insert/extract preserved state." : "Boundary invariant failed.",
+                System.nanoTime() - t0);
+    }
+
+    private TestResult testPriorityQueueMaxHeapOrderAndTieBreaker() {
+        long t0 = System.nanoTime();
+        CryptoNewsPriorityQueue pq = new CryptoNewsPriorityQueue();
+        pq.insert(mockScoredNews("low", "Minor token note", 25.0, 1_760_000_500L));
+        pq.insert(mockScoredNews("tie-old", "Older equal-score story", 90.0, 1_760_000_100L));
+        pq.insert(mockScoredNews("tie-new", "Newer equal-score story", 90.0, 1_760_000_900L));
+        pq.insert(mockScoredNews("high", "SEC spot ETF approval", 135.0, 1_760_000_200L));
+
+        boolean invariantOk = pq.verifyMaxHeapInvariant();
+        List<ScoredNewsItem> ordered = pq.extractTopK(4);
+        boolean orderOk = ordered.size() == 4
+                && "high".equals(ordered.get(0).item().id())
+                && "tie-new".equals(ordered.get(1).item().id())
+                && "tie-old".equals(ordered.get(2).item().id())
+                && "low".equals(ordered.get(3).item().id());
+
+        boolean passed = invariantOk && orderOk;
+        return new TestResult("Unit 2: Priority Queue", "T32: Max-Heap Ordering & Recency Tie-Break", passed,
+                "Extracted strict descending priorities with newer timestamp winning score ties.",
+                System.nanoTime() - t0);
+    }
+
+    private TestResult testPriorityQueueBuildHeapAndIncreasePriority() {
+        long t0 = System.nanoTime();
+        List<ScoredNewsItem> items = List.of(
+                mockScoredNews("a", "Story A", 40.0, 100L),
+                mockScoredNews("b", "Story B", 75.0, 200L),
+                mockScoredNews("c", "Story C", 55.0, 300L),
+                mockScoredNews("d", "Story D", 95.0, 400L),
+                mockScoredNews("e", "Story E", 30.0, 500L)
+        );
+        CryptoNewsPriorityQueue pq = new CryptoNewsPriorityQueue();
+        pq.buildHeap(items);
+        boolean floydOk = pq.verifyMaxHeapInvariant() && "d".equals(pq.peekMax().item().id());
+        boolean boosted = pq.increasePriority("e", 80.0); // 30 + 80 = 110 -> becomes root
+        boolean boostOk = boosted && pq.verifyMaxHeapInvariant() && "e".equals(pq.peekMax().item().id());
+        boolean passed = floydOk && boostOk;
+        return new TestResult("Unit 2: Priority Queue", "T33: Floyd O(N) Heapify & IncreasePriority", passed,
+                "Floyd buildHeap established invariant and O(log N) increasePriority promoted boosted item to root.",
+                System.nanoTime() - t0);
+    }
+
+    private TestResult testCryptoKeywordRelevanceGateAndFalsePositiveGuard() {
+        long t0 = System.nanoTime();
+        CryptoKeywordAnalyzer analyzer = new CryptoKeywordAnalyzer();
+        var offTopic = analyzer.checkText("OpenAI and Anthropic engineers debate enterprise productivity software", "ALL", PriorityMode.BALANCED, List.of());
+        var falseNear = analyzer.checkText("Stock futures trade flat near term ahead of retail sales report", "ALL", PriorityMode.BALANCED, List.of());
+        var nearCrypto = analyzer.checkText("NEAR Protocol mainnet upgrade boosts DeFi TVL and staking inflows", "NEAR", PriorityMode.CATALYST, List.of());
+        var solCatalyst = analyzer.checkText("SEC reviews spot Solana ETF filing as SOL whale inflow surges", "SOL", PriorityMode.CATALYST, List.of());
+
+        boolean passed = !offTopic.cryptoRelevant()
+                && !falseNear.matchedCoins().contains("NEAR")
+                && nearCrypto.cryptoRelevant()
+                && nearCrypto.matchedCoins().contains("NEAR")
+                && solCatalyst.cryptoRelevant()
+                && solCatalyst.matchedCoins().contains("SOL")
+                && solCatalyst.keywordMatches().size() >= 4;
+        return new TestResult("Unit 2: Priority Queue", "T34: Crypto Keyword Gate & Ambiguity Guard", passed,
+                String.format("Rejected off-topic & 'near term' false match; matched NEAR (%d kw) & SOL (%d kw).",
+                        nearCrypto.keywordMatches().size(), solCatalyst.keywordMatches().size()),
+                System.nanoTime() - t0);
+    }
+
+    private TestResult testPriorityQueueScaledTopKBenchmark() {
+        long t0 = System.nanoTime();
+        CryptoNewsPriorityQueue pq = new CryptoNewsPriorityQueue();
+        var bm500 = pq.benchmarkTopK(500, 20);
+        var bm2000 = pq.benchmarkTopK(2000, 20);
+        var bm10000 = pq.benchmarkTopK(10000, 20);
+
+        // Also cross-verify exact Top-10 equivalence against Arrays.sort on 200 items
+        List<ScoredNewsItem> sample = new ArrayList<>();
+        Random rng = new Random(11);
+        for (int i = 0; i < 200; i++) {
+            sample.add(mockScoredNews("s-" + i, "Headline " + i, rng.nextDouble() * 200.0, 1_760_000_000L + i));
+        }
+        pq.buildHeap(sample);
+        List<ScoredNewsItem> heapTop10 = pq.extractTopK(10);
+        List<ScoredNewsItem> sortedCopy = new ArrayList<>(sample);
+        sortedCopy.sort((a, b) -> CryptoNewsPriorityQueue.comparePriority(b, a));
+        boolean exactMatch = true;
+        for (int i = 0; i < 10; i++) {
+            if (!heapTop10.get(i).item().id().equals(sortedCopy.get(i).item().id())) {
+                exactMatch = false;
+                break;
+            }
+        }
+
+        boolean passed = exactMatch && bm500.heapTimeNs() > 0 && bm2000.heapTimeNs() > 0 && bm10000.heapTimeNs() > 0;
+        return new TestResult("Unit 2: Priority Queue", "T35: Scaled Top-K vs Full Sort (N=500..10k)", passed,
+                String.format("N=10k Top-20: Heap=%.2fms vs Sort=%.2fms (Speedup=%.2fx)",
+                        bm10000.heapTimeNs() / 1e6, bm10000.sortTimeNs() / 1e6, bm10000.speedupFactor()),
+                System.nanoTime() - t0);
+    }
+
+    private static ScoredNewsItem mockScoredNews(String id, String title, double score, long epochSec) {
+        RawNewsItem raw = new RawNewsItem(id, title, "", "https://example.com/" + id, "TestFeed", 20.0, "", epochSec, List.of());
+        return new ScoredNewsItem(raw, List.of("BTC"), List.of(), "NEUTRAL", 20.0, 20.0, 50.0, 20.0, 0.0, score);
     }
 
     private static double[][] euclideanMatrix(double[][] coords) {

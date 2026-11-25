@@ -3,6 +3,10 @@ package algo.api;
 import algo.approx.MetricTspApproximator;
 import algo.bloom.OrderFlowBloomFilter;
 import algo.flow.OrderFlowNetwork;
+import algo.priority.CryptoKeywordAnalyzer;
+import algo.priority.CryptoNewsPriorityQueue;
+import algo.priority.NewsModels.*;
+import algo.priority.RssFeedFetcher;
 import algo.sim.MonteCarloSimulator;
 import algo.stats.RandomizedQuickselect;
 import algo.test.AlgorithmTestSuite;
@@ -46,11 +50,14 @@ public class AlgoApiServer {
     private final RandomizedQuickselect quickselect = new RandomizedQuickselect();
     private final MonteCarloSimulator monteCarloEngine = new MonteCarloSimulator();
     private final MetricTspApproximator tspEngine = new MetricTspApproximator();
+    private final CryptoKeywordAnalyzer keywordAnalyzer = new CryptoKeywordAnalyzer();
     private final AlgorithmTestSuite testSuite = new AlgorithmTestSuite();
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NORMAL)
             .build();
+    private final RssFeedFetcher rssFeedFetcher = new RssFeedFetcher(httpClient);
 
     public AlgoApiServer() {
         // Pre-populate Bloom filter with known institutional spoofing signatures
@@ -71,6 +78,9 @@ public class AlgoApiServer {
         server.createContext("/api/stats/benchmark", new StatsBenchmarkHandler());
         server.createContext("/api/sim/montecarlo", new MonteCarloHandler());
         server.createContext("/api/sim/tsp", new MetricTspHandler());
+        server.createContext("/api/news/feed", new NewsFeedHandler());
+        server.createContext("/api/news/keywords/check", new NewsKeywordCheckHandler());
+        server.createContext("/api/news/benchmark", new NewsBenchmarkHandler());
         server.createContext("/api/test/run", new TestRunHandler());
 
         server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
@@ -87,6 +97,9 @@ public class AlgoApiServer {
         System.out.println("  * GET  /api/stats/benchmark?size=10000");
         System.out.println("  * GET  /api/sim/montecarlo?symbol=BTCUSDT&interval=15m&trials=2000&horizon=30&mode=GBM");
         System.out.println("  * GET  /api/sim/tsp?symbols=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT,AVAXUSDT,LINKUSDT");
+        System.out.println("  * GET  /api/news/feed?coins=ALL&mode=BALANCED&topK=20");
+        System.out.println("  * GET  /api/news/keywords/check?text=SEC+approves+spot+Bitcoin+ETF&coin=BTC");
+        System.out.println("  * GET  /api/news/benchmark?size=5000&topK=20");
         System.out.println("  * GET  /api/test/run");
         System.out.println("==========================================================================================");
     }
@@ -99,10 +112,10 @@ public class AlgoApiServer {
             {
                 "status": "ONLINE",
                 "service": "Advanced Algorithm Real-World Trading Engine",
-                "version": "2.1.0",
+                "version": "2.2.0",
                 "javaVersion": "%s",
-                "syllabusUnitsCovered": ["Unit 4: Tries", "Unit 5: Max-Flow Min-Cut", "Unit 5: Metric TSP 2-Approx", "Unit 6: Monte Carlo Simulation", "Unit 6: Bloom Filter (CO5)", "Unit 1/6: Quickselect"],
-                "activeAlgorithms": 6,
+                "syllabusUnitsCovered": ["Unit 2: Binary Max-Heap Priority Queue", "Unit 4: Tries", "Unit 5: Max-Flow Min-Cut", "Unit 5: Metric TSP 2-Approx", "Unit 6: Monte Carlo Simulation", "Unit 6: Bloom Filter (CO5)", "Unit 1/6: Quickselect"],
+                "activeAlgorithms": 7,
                 "timestamp": %d
             }
             """.formatted(System.getProperty("java.version"), System.currentTimeMillis());
@@ -528,6 +541,257 @@ public class AlgoApiServer {
         }
     }
 
+    private class NewsFeedHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
+            Map<String, String> params = parseQueryParams(exchange.getRequestURI());
+            String focusCoin = CryptoKeywordAnalyzer.normalizeSymbol(params.getOrDefault("coin", "ALL"));
+            if (focusCoin.isEmpty()) focusCoin = "ALL";
+            String coinsParam = params.getOrDefault("coins", String.join(",", CryptoKeywordAnalyzer.WATCHLIST_COINS));
+            PriorityMode mode = PriorityMode.fromString(params.getOrDefault("mode", "BALANCED"));
+            int topK = Math.max(1, Math.min(100, parseIntOrDefault(params.get("topK"), 20)));
+            boolean includeGoogle = Boolean.parseBoolean(params.getOrDefault("includeGoogleNews", "true"));
+            boolean forceRefresh = Boolean.parseBoolean(params.getOrDefault("refresh", "false"));
+            String customKwParam = params.getOrDefault("customKeywords", "");
+
+            List<String> trackedCoins = new ArrayList<>();
+            for (String s : coinsParam.split(",")) {
+                String norm = CryptoKeywordAnalyzer.normalizeSymbol(s);
+                if (!norm.isEmpty() && !trackedCoins.contains(norm)) trackedCoins.add(norm);
+            }
+            if (!"ALL".equals(focusCoin) && !trackedCoins.contains(focusCoin)) {
+                trackedCoins.add(focusCoin);
+            }
+
+            List<String> customKeywords = new ArrayList<>();
+            for (String kw : customKwParam.split(",")) {
+                String clean = kw.trim();
+                if (!clean.isEmpty()) customKeywords.add(clean);
+            }
+
+            try {
+                long tStart = System.nanoTime();
+                RssFeedFetcher.FetchBundle bundle = rssFeedFetcher.fetchAll(focusCoin, includeGoogle, forceRefresh);
+                long nowEpochSec = System.currentTimeMillis() / 1000L;
+
+                // Single pass for corpus-wide coin hit counts + relevance filtering
+                Map<String, Integer> coinCounts = new LinkedHashMap<>();
+                for (String c : CryptoKeywordAnalyzer.WATCHLIST_COINS) coinCounts.put(c, 0);
+                if (!"ALL".equals(focusCoin) && !coinCounts.containsKey(focusCoin)) coinCounts.put(focusCoin, 0);
+
+                List<ScoredNewsItem> relevantAll = new ArrayList<>();
+                int filteredOutCount = 0;
+                for (RawNewsItem raw : bundle.items()) {
+                    ScoredNewsItem scoredAll = keywordAnalyzer.analyzeAndScore(raw, "ALL", trackedCoins, mode, customKeywords, nowEpochSec);
+                    if (scoredAll == null) {
+                        filteredOutCount++;
+                        continue;
+                    }
+                    relevantAll.add(scoredAll);
+                    for (String matched : scoredAll.matchedCoins()) {
+                        coinCounts.put(matched, coinCounts.getOrDefault(matched, 0) + 1);
+                    }
+                }
+
+                // Target corpus for the Priority Queue (either ALL or focused coin with focus bonus)
+                List<ScoredNewsItem> queueInputs;
+                if ("ALL".equals(focusCoin)) {
+                    queueInputs = relevantAll;
+                } else {
+                    queueInputs = new ArrayList<>();
+                    for (RawNewsItem raw : bundle.items()) {
+                        ScoredNewsItem focused = keywordAnalyzer.analyzeAndScore(raw, focusCoin, trackedCoins, mode, customKeywords, nowEpochSec);
+                        if (focused != null) queueInputs.add(focused);
+                    }
+                }
+
+                // Keyword frequencies across active corpus
+                Map<String, Integer> kwCountMap = new HashMap<>();
+                Map<String, KeywordMatch> kwMetaMap = new HashMap<>();
+                for (ScoredNewsItem s : queueInputs) {
+                    for (KeywordMatch km : s.keywordMatches()) {
+                        kwCountMap.merge(km.keyword(), 1, Integer::sum);
+                        kwMetaMap.putIfAbsent(km.keyword(), km);
+                    }
+                }
+                List<KeywordFrequency> topKeywords = new ArrayList<>();
+                for (Map.Entry<String, Integer> e : kwCountMap.entrySet()) {
+                    KeywordMatch meta = kwMetaMap.get(e.getKey());
+                    topKeywords.add(new KeywordFrequency(e.getKey(), meta.tier(), meta.category(), e.getValue(), meta.weight()));
+                }
+                topKeywords.sort((a, b) -> {
+                    int cCmp = Integer.compare(b.count(), a.count());
+                    return cCmp != 0 ? cCmp : Double.compare(b.weight(), a.weight());
+                });
+                if (topKeywords.size() > 24) topKeywords = topKeywords.subList(0, 24);
+
+                // Unit 2 Binary Max-Heap Construction (O(N)) + Top-K Extraction (O(K log N))
+                long heapT0 = System.nanoTime();
+                CryptoNewsPriorityQueue pq = new CryptoNewsPriorityQueue(Math.max(16, queueInputs.size()));
+                pq.buildHeap(queueInputs);
+                List<HeapNodeView> heapSnapshot = pq.snapshotHeapNodes(15);
+                int heapSize = pq.size();
+                int heapHeight = pq.getHeapHeight();
+                List<ScoredNewsItem> rankedTopK = pq.extractTopK(topK);
+                long liveHeapNs = System.nanoTime() - heapT0;
+
+                // Empirical scaled benchmark vs Full Sort Baseline
+                PriorityBenchmark scaledBenchmark = pq.benchmarkTopK(5000, Math.min(topK, 20));
+                long totalMs = (System.nanoTime() - tStart) / 1_000_000L;
+
+                StringBuilder json = new StringBuilder();
+                json.append("{");
+                json.append("\"focusCoin\":\"").append(escapeJson(focusCoin)).append("\",");
+                json.append("\"mode\":\"").append(mode.name()).append("\",");
+                json.append("\"modeLabel\":\"").append(escapeJson(mode.label)).append("\",");
+                json.append("\"topK\":").append(topK).append(",");
+                json.append("\"rawFetchedCount\":").append(bundle.items().size()).append(",");
+                json.append("\"filteredOutCount\":").append(filteredOutCount).append(",");
+                json.append("\"cryptoRelevantCount\":").append(relevantAll.size()).append(",");
+                json.append("\"heapSize\":").append(heapSize).append(",");
+                json.append("\"heapHeight\":").append(heapHeight).append(",");
+                json.append("\"liveHeapExtractTimeNs\":").append(liveHeapNs).append(",");
+                json.append("\"totalPipelineMs\":").append(totalMs).append(",");
+                json.append("\"generatedEpochSec\":").append(nowEpochSec).append(",");
+
+                // Coin counts
+                json.append("\"coinCounts\":{");
+                int cIdx = 0;
+                for (Map.Entry<String, Integer> e : coinCounts.entrySet()) {
+                    json.append("\"").append(escapeJson(e.getKey())).append("\":").append(e.getValue());
+                    if (cIdx++ < coinCounts.size() - 1) json.append(",");
+                }
+                json.append("},");
+
+                // Top keywords
+                json.append("\"keywordFrequencies\":[");
+                for (int i = 0; i < topKeywords.size(); i++) {
+                    var kf = topKeywords.get(i);
+                    json.append("{\"keyword\":\"").append(escapeJson(kf.keyword())).append("\",")
+                        .append("\"tier\":").append(kf.tier()).append(",")
+                        .append("\"category\":\"").append(escapeJson(kf.category())).append("\",")
+                        .append("\"count\":").append(kf.count()).append(",")
+                        .append("\"weight\":").append(kf.weight()).append("}");
+                    if (i < topKeywords.size() - 1) json.append(",");
+                }
+                json.append("],");
+
+                // Binary Max-Heap snapshot
+                json.append("\"heapNodes\":[");
+                for (int i = 0; i < heapSnapshot.size(); i++) {
+                    var hn = heapSnapshot.get(i);
+                    json.append("{\"heapIndex\":").append(hn.heapIndex()).append(",")
+                        .append("\"newsId\":\"").append(escapeJson(hn.newsId())).append("\",")
+                        .append("\"title\":\"").append(escapeJson(hn.title())).append("\",")
+                        .append("\"primaryCoin\":\"").append(escapeJson(hn.primaryCoin())).append("\",")
+                        .append("\"priorityScore\":").append(hn.priorityScore()).append(",")
+                        .append("\"parentIndex\":").append(hn.parentIndex()).append(",")
+                        .append("\"leftIndex\":").append(hn.leftIndex()).append(",")
+                        .append("\"rightIndex\":").append(hn.rightIndex()).append("}");
+                    if (i < heapSnapshot.size() - 1) json.append(",");
+                }
+                json.append("],");
+
+                // Benchmark
+                json.append("\"benchmark\":{")
+                    .append("\"itemCount\":").append(scaledBenchmark.itemCount()).append(",")
+                    .append("\"topK\":").append(scaledBenchmark.topK()).append(",")
+                    .append("\"heapTimeNs\":").append(scaledBenchmark.heapTimeNs()).append(",")
+                    .append("\"sortTimeNs\":").append(scaledBenchmark.sortTimeNs()).append(",")
+                    .append("\"speedupFactor\":").append(scaledBenchmark.speedupFactor())
+                    .append("},");
+
+                // Feed statuses
+                json.append("\"feedStatuses\":[");
+                for (int i = 0; i < bundle.statuses().size(); i++) {
+                    var fs = bundle.statuses().get(i);
+                    json.append("{\"sourceName\":\"").append(escapeJson(fs.sourceName())).append("\",")
+                        .append("\"url\":\"").append(escapeJson(fs.url())).append("\",")
+                        .append("\"status\":\"").append(escapeJson(fs.status())).append("\",")
+                        .append("\"itemCount\":").append(fs.itemCount()).append(",")
+                        .append("\"latencyMs\":").append(fs.latencyMs()).append("}");
+                    if (i < bundle.statuses().size() - 1) json.append(",");
+                }
+                json.append("],");
+
+                // Ranked items
+                json.append("\"items\":[");
+                for (int i = 0; i < rankedTopK.size(); i++) {
+                    appendScoredNewsJson(json, rankedTopK.get(i), i + 1);
+                    if (i < rankedTopK.size() - 1) json.append(",");
+                }
+                json.append("]");
+                json.append("}");
+
+                sendJsonResponse(exchange, 200, json.toString());
+            } catch (Exception e) {
+                sendJsonResponse(exchange, 500, "{\"error\":\"" + escapeJson(String.valueOf(e.getMessage())) + "\"}");
+            }
+        }
+    }
+
+    private class NewsKeywordCheckHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
+            Map<String, String> params = parseQueryParams(exchange.getRequestURI());
+            String text = params.getOrDefault("text", "");
+            String coin = params.getOrDefault("coin", "ALL");
+            PriorityMode mode = PriorityMode.fromString(params.getOrDefault("mode", "BALANCED"));
+            String customKwParam = params.getOrDefault("customKeywords", "");
+
+            List<String> customKeywords = new ArrayList<>();
+            for (String kw : customKwParam.split(",")) {
+                String clean = kw.trim();
+                if (!clean.isEmpty()) customKeywords.add(clean);
+            }
+
+            KeywordCheckResult res = keywordAnalyzer.checkText(text, coin, mode, customKeywords);
+
+            StringBuilder json = new StringBuilder();
+            json.append("{");
+            json.append("\"text\":\"").append(escapeJson(res.text())).append("\",");
+            json.append("\"cryptoRelevant\":").append(res.cryptoRelevant()).append(",");
+            json.append("\"sentimentHint\":\"").append(escapeJson(res.sentimentHint())).append("\",");
+            json.append("\"coinScore\":").append(res.coinScore()).append(",");
+            json.append("\"keywordScore\":").append(res.keywordScore()).append(",");
+            json.append("\"customBoostScore\":").append(res.customBoostScore()).append(",");
+            json.append("\"estimatedPriorityScore\":").append(res.estimatedPriorityScore()).append(",");
+            appendStringList(json, "matchedCoins", res.matchedCoins());
+            json.append(",");
+            json.append("\"keywordMatches\":");
+            appendKeywordMatchesJson(json, res.keywordMatches());
+            json.append("}");
+
+            sendJsonResponse(exchange, 200, json.toString());
+        }
+    }
+
+    private class NewsBenchmarkHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
+            Map<String, String> params = parseQueryParams(exchange.getRequestURI());
+            int size = Math.max(20, Math.min(200_000, parseIntOrDefault(params.get("size"), 5000)));
+            int topK = Math.max(1, Math.min(size, parseIntOrDefault(params.get("topK"), 20)));
+
+            CryptoNewsPriorityQueue pq = new CryptoNewsPriorityQueue();
+            PriorityBenchmark bm = pq.benchmarkTopK(size, topK);
+
+            String json = """
+            {
+                "itemCount": %d,
+                "topK": %d,
+                "heapTimeNs": %d,
+                "sortTimeNs": %d,
+                "speedupFactor": %.2f
+            }
+            """.formatted(bm.itemCount(), bm.topK(), bm.heapTimeNs(), bm.sortTimeNs(), bm.speedupFactor());
+            sendJsonResponse(exchange, 200, json);
+        }
+    }
+
     private class TestRunHandler implements HttpHandler {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
@@ -614,6 +878,64 @@ public class AlgoApiServer {
             if (i < arr.length - 1) json.append(",");
         }
         json.append("]");
+    }
+
+    private static int parseIntOrDefault(String raw, int fallback) {
+        if (raw == null || raw.isBlank()) return fallback;
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    private static void appendStringList(StringBuilder json, String name, List<String> list) {
+        json.append("\"").append(name).append("\":[");
+        for (int i = 0; i < list.size(); i++) {
+            json.append("\"").append(escapeJson(list.get(i))).append("\"");
+            if (i < list.size() - 1) json.append(",");
+        }
+        json.append("]");
+    }
+
+    private static void appendKeywordMatchesJson(StringBuilder json, List<KeywordMatch> matches) {
+        json.append("[");
+        for (int i = 0; i < matches.size(); i++) {
+            var km = matches.get(i);
+            json.append("{")
+                .append("\"keyword\":\"").append(escapeJson(km.keyword())).append("\",")
+                .append("\"tier\":").append(km.tier()).append(",")
+                .append("\"category\":\"").append(escapeJson(km.category())).append("\",")
+                .append("\"weight\":").append(km.weight()).append(",")
+                .append("\"matchedInTitle\":").append(km.matchedInTitle())
+                .append("}");
+            if (i < matches.size() - 1) json.append(",");
+        }
+        json.append("]");
+    }
+
+    private static void appendScoredNewsJson(StringBuilder json, ScoredNewsItem s, int rank) {
+        RawNewsItem it = s.item();
+        json.append("{")
+            .append("\"rank\":").append(rank).append(",")
+            .append("\"id\":\"").append(escapeJson(it.id())).append("\",")
+            .append("\"title\":\"").append(escapeJson(it.title())).append("\",")
+            .append("\"summary\":\"").append(escapeJson(it.summary())).append("\",")
+            .append("\"link\":\"").append(escapeJson(it.link())).append("\",")
+            .append("\"sourceName\":\"").append(escapeJson(it.sourceName())).append("\",")
+            .append("\"imageUrl\":\"").append(escapeJson(it.imageUrl())).append("\",")
+            .append("\"publishedEpochSec\":").append(it.publishedEpochSec()).append(",")
+            .append("\"sentimentHint\":\"").append(escapeJson(s.sentimentHint())).append("\",")
+            .append("\"coinScore\":").append(s.coinScore()).append(",")
+            .append("\"keywordScore\":").append(s.keywordScore()).append(",")
+            .append("\"recencyScore\":").append(s.recencyScore()).append(",")
+            .append("\"sourceScore\":").append(s.sourceScore()).append(",")
+            .append("\"customBoostScore\":").append(s.customBoostScore()).append(",")
+            .append("\"priorityScore\":").append(s.priorityScore()).append(",");
+        appendStringList(json, "matchedCoins", s.matchedCoins());
+        json.append(",\"keywordMatches\":");
+        appendKeywordMatchesJson(json, s.keywordMatches());
+        json.append("}");
     }
 
     private static void appendIntList(StringBuilder json, String name, List<Integer> list) {
