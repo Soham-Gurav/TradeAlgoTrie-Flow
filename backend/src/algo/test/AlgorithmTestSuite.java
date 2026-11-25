@@ -1,7 +1,9 @@
 package algo.test;
 
+import algo.approx.MetricTspApproximator;
 import algo.bloom.OrderFlowBloomFilter;
 import algo.flow.OrderFlowNetwork;
+import algo.sim.MonteCarloSimulator;
 import algo.stats.RandomizedQuickselect;
 import algo.trie.DoubleTriePredictor;
 
@@ -60,6 +62,20 @@ public class AlgorithmTestSuite {
         list.add(testQuickselectMinMaxBoundaries());
         list.add(testQuickselectDuplicateElements());
         list.add(testQuickselectScaledBenchmark());
+
+        // 5. Monte Carlo Simulator Tests (Unit 6)
+        list.add(testMonteCarloInsufficientInputBoundary());
+        list.add(testMonteCarloZeroVolatilityInvariance());
+        list.add(testMonteCarloConvergenceToTheoreticalMean());
+        list.add(testMonteCarloRiskAndProbabilityBounds());
+        list.add(testMonteCarloScaledBenchmark());
+
+        // 6. Metric TSP 2-Approximation Tests (Unit 5)
+        list.add(testTspEmptyAndSingleBoundary());
+        list.add(testTspMetricTriangleInequality());
+        list.add(testTspTwoApproximationGuarantee());
+        list.add(testTspValidHamiltonianCycle());
+        list.add(testTspScaledRuntimeComparison());
 
         int passed = 0;
         for (TestResult r : list) {
@@ -319,6 +335,191 @@ public class AlgorithmTestSuite {
         return new TestResult("Unit 1/6: Quickselect", "T20: Scaled Benchmark (N=100, 1000, 10000)", passed,
                 String.format("N=10k: QS took %d us vs Sort %d us (Speedup: %.2fx)",
                         bm10000.quickselectTimeNs() / 1000, bm10000.sortBaselineTimeNs() / 1000, bm10000.speedupFactor()), System.nanoTime() - t0);
+    }
+
+    // --- MONTE CARLO SIMULATOR TESTS (UNIT 6) ---
+    private TestResult testMonteCarloInsufficientInputBoundary() {
+        long t0 = System.nanoTime();
+        MonteCarloSimulator mc = new MonteCarloSimulator();
+        boolean threw = false;
+        try {
+            mc.simulate(Collections.emptyList(), 500, 10, MonteCarloSimulator.SimulationMode.GBM, 2.0, 1.5);
+        } catch (IllegalArgumentException ex) {
+            threw = true;
+        }
+        return new TestResult("Unit 6: Monte Carlo", "T21: Empty/Insufficient Input Boundary", threw,
+                threw ? "Correctly rejected empty candle list with IllegalArgumentException." : "Failed to reject empty input.",
+                System.nanoTime() - t0);
+    }
+
+    private TestResult testMonteCarloZeroVolatilityInvariance() {
+        long t0 = System.nanoTime();
+        MonteCarloSimulator mc = new MonteCarloSimulator();
+        List<DoubleTriePredictor.SimpleCandle> flat = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            flat.add(new DoubleTriePredictor.SimpleCandle(1700000000L + i * 900L, 100, 100, 100, 100, 1000));
+        }
+        var res = mc.simulate(flat, 300, 15, MonteCarloSimulator.SimulationMode.GBM, 2.0, 1.5, new Random(42));
+        boolean passed = Math.abs(res.perBarVolatilityPct()) < 1e-9
+                && Math.abs(res.p5Path()[15] - 100.0) < 1e-6
+                && Math.abs(res.p95Path()[15] - 100.0) < 1e-6;
+        return new TestResult("Unit 6: Monte Carlo", "T22: Zero-Volatility Deterministic Invariance", passed,
+                String.format("Sigma=%.4f%% -> P5=%.2f, P95=%.2f (strictly invariant at 100.00)",
+                        res.perBarVolatilityPct(), res.p5Path()[15], res.p95Path()[15]), System.nanoTime() - t0);
+    }
+
+    private TestResult testMonteCarloConvergenceToTheoreticalMean() {
+        long t0 = System.nanoTime();
+        MonteCarloSimulator mc = new MonteCarloSimulator();
+        List<DoubleTriePredictor.SimpleCandle> candles = createMockCandles(60, true);
+        var lowN = mc.simulate(candles, 100, 20, MonteCarloSimulator.SimulationMode.GBM, 3.0, 2.0, new Random(7));
+        var highN = mc.simulate(candles, 8000, 20, MonteCarloSimulator.SimulationMode.GBM, 3.0, 2.0, new Random(7));
+        boolean passed = highN.meanConvergenceErrorPct() < 1.5 && highN.meanConvergenceErrorPct() <= lowN.meanConvergenceErrorPct() + 1.0;
+        return new TestResult("Unit 6: Monte Carlo", "T23: Convergence to Theoretical GBM Mean", passed,
+                String.format("M=8000 error=%.3f%% vs M=100 error=%.3f%% (Theoretical=%.2f)",
+                        highN.meanConvergenceErrorPct(), lowN.meanConvergenceErrorPct(), highN.theoreticalMeanPrice()),
+                System.nanoTime() - t0);
+    }
+
+    private TestResult testMonteCarloRiskAndProbabilityBounds() {
+        long t0 = System.nanoTime();
+        MonteCarloSimulator mc = new MonteCarloSimulator();
+        List<DoubleTriePredictor.SimpleCandle> candles = createOscillatingCandles(50);
+        var res = mc.simulate(candles, 1000, 20, MonteCarloSimulator.SimulationMode.BOOTSTRAP, 2.0, 2.0, new Random(99));
+        boolean passed = res.probProfitPct() >= 0.0 && res.probProfitPct() <= 100.0
+                && res.probTakeProfitPct() >= 0.0 && res.probStopLossPct() >= 0.0
+                && res.probTakeProfitPct() + res.probStopLossPct() <= 100.0 + 1e-6
+                && res.cvar95Pct() + 1e-9 >= res.var95Pct()
+                && res.p5Path()[20] <= res.p50Path()[20] && res.p50Path()[20] <= res.p95Path()[20];
+        return new TestResult("Unit 6: Monte Carlo", "T24: VaR <= CVaR & Quantile Cone Bounds", passed,
+                String.format("VaR95=%.2f%% <= CVaR95=%.2f%% | P(Profit)=%.1f%%",
+                        res.var95Pct(), res.cvar95Pct(), res.probProfitPct()), System.nanoTime() - t0);
+    }
+
+    private TestResult testMonteCarloScaledBenchmark() {
+        long t0 = System.nanoTime();
+        MonteCarloSimulator mc = new MonteCarloSimulator();
+        List<DoubleTriePredictor.SimpleCandle> candles = createOscillatingCandles(60);
+        var s500 = mc.simulate(candles, 500, 20, MonteCarloSimulator.SimulationMode.GBM, 2.0, 1.5, new Random(1));
+        var s2000 = mc.simulate(candles, 2000, 20, MonteCarloSimulator.SimulationMode.GBM, 2.0, 1.5, new Random(1));
+        var s10000 = mc.simulate(candles, 10000, 20, MonteCarloSimulator.SimulationMode.GBM, 2.0, 1.5, new Random(1));
+        boolean passed = s500.trials() == 500 && s2000.trials() == 2000 && s10000.trials() == 10000
+                && s10000.executionTimeNs() > 0;
+        return new TestResult("Unit 6: Monte Carlo", "T25: Scaled Simulation Benchmark (M=500..10k)", passed,
+                String.format("500: %.2fms | 2k: %.2fms | 10k: %.2fms",
+                        s500.executionTimeNs() / 1e6, s2000.executionTimeNs() / 1e6, s10000.executionTimeNs() / 1e6),
+                System.nanoTime() - t0);
+    }
+
+    // --- METRIC TSP 2-APPROXIMATION TESTS (UNIT 5) ---
+    private TestResult testTspEmptyAndSingleBoundary() {
+        long t0 = System.nanoTime();
+        MetricTspApproximator tsp = new MetricTspApproximator();
+        var empty = tsp.solveFromDistanceMatrix(Collections.emptyList(), new double[0][0]);
+        var single = tsp.solveFromDistanceMatrix(List.of("BTC"), new double[][]{{0.0}});
+        boolean passed = empty.approxTour().isEmpty() && Math.abs(empty.approxCost()) < 1e-9
+                && single.approxTour().equals(List.of(0, 0)) && Math.abs(single.approxCost()) < 1e-9;
+        return new TestResult("Unit 5: Metric TSP", "T26: Empty & Single-Node Boundary", passed,
+                "Handled N=0 and N=1 gracefully with 0.0 tour cost.", System.nanoTime() - t0);
+    }
+
+    private TestResult testTspMetricTriangleInequality() {
+        long t0 = System.nanoTime();
+        MetricTspApproximator tsp = new MetricTspApproximator();
+        Random rng = new Random(123);
+        List<String> syms = List.of("BTC", "ETH", "SOL", "BNB", "XRP");
+        List<double[]> rets = new ArrayList<>();
+        for (int i = 0; i < syms.size(); i++) {
+            double[] r = new double[40];
+            for (int k = 0; k < 40; k++) r[k] = rng.nextGaussian() * 0.02;
+            rets.add(r);
+        }
+        var res = tsp.solveFromReturnSeries(syms, rets);
+        boolean passed = res.validMetric();
+        return new TestResult("Unit 5: Metric TSP", "T27: Correlation Distance Metric Axiom", passed,
+                "Verified d(i,j)=sqrt(2*(1-rho)) satisfies triangle inequality across 5 assets.", System.nanoTime() - t0);
+    }
+
+    private TestResult testTspTwoApproximationGuarantee() {
+        long t0 = System.nanoTime();
+        MetricTspApproximator tsp = new MetricTspApproximator();
+        // 6 points in 2D Euclidean space (strict metric)
+        double[][] coords = {{0, 0}, {1, 0}, {2, 0.4}, {2.2, 1.5}, {1, 2}, {0.1, 1.4}};
+        double[][] dist = euclideanMatrix(coords);
+        var res = tsp.solveFromDistanceMatrix(List.of("A", "B", "C", "D", "E", "F"), dist);
+        boolean passed = res.validMetric()
+                && res.approxCost() <= 2.0 * res.exactOptimalCost() + 1e-6
+                && res.approxCost() <= 2.0 * res.mstCost() + 1e-6
+                && res.exactOptimalCost() <= res.approxCost() + 1e-6;
+        return new TestResult("Unit 5: Metric TSP", "T28: 2-Approximation Guarantee vs Exact OPT", passed,
+                String.format("Approx=%.3f, OPT=%.3f, MST=%.3f (Ratio=%.3fx <= 2.0x)",
+                        res.approxCost(), res.exactOptimalCost(), res.mstCost(), res.approxRatioVsOpt()),
+                System.nanoTime() - t0);
+    }
+
+    private TestResult testTspValidHamiltonianCycle() {
+        long t0 = System.nanoTime();
+        MetricTspApproximator tsp = new MetricTspApproximator();
+        double[][] coords = {{0, 0}, {3, 1}, {4, 4}, {1, 5}, {-1, 2}, {2, 2}, {3.5, 0.5}};
+        double[][] dist = euclideanMatrix(coords);
+        var res = tsp.solveFromDistanceMatrix(List.of("N0", "N1", "N2", "N3", "N4", "N5", "N6"), dist);
+        Set<Integer> unique = new HashSet<>(res.approxTour().subList(0, res.approxTour().size() - 1));
+        boolean passed = res.approxTour().size() == 8
+                && unique.size() == 7
+                && Objects.equals(res.approxTour().get(0), res.approxTour().get(7));
+        return new TestResult("Unit 5: Metric TSP", "T29: Valid Hamiltonian Cycle Permutation", passed,
+                "Tour visits all 7 nodes once and returns cleanly to origin node 0.", System.nanoTime() - t0);
+    }
+
+    private TestResult testTspScaledRuntimeComparison() {
+        long t0 = System.nanoTime();
+        MetricTspApproximator tsp = new MetricTspApproximator();
+        Random rng = new Random(77);
+        int[] sizes = {6, 9, 11};
+        StringBuilder details = new StringBuilder();
+        boolean passed = true;
+        for (int n : sizes) {
+            double[][] coords = new double[n][2];
+            List<String> syms = new ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                coords[i][0] = rng.nextDouble() * 10.0;
+                coords[i][1] = rng.nextDouble() * 10.0;
+                syms.add("A" + i);
+            }
+            var res = tsp.solveFromDistanceMatrix(syms, euclideanMatrix(coords));
+            if (res.approxRatioVsOpt() > 2.0 + 1e-6) passed = false;
+            details.append(String.format("N=%d:%.2fx ", n, res.approxRatioVsOpt()));
+        }
+        return new TestResult("Unit 5: Metric TSP", "T30: Scaled 2-Approx vs Exact Held-Karp (N=6,9,11)", passed,
+                "Empirical approx ratios: " + details.toString().trim(), System.nanoTime() - t0);
+    }
+
+    private static double[][] euclideanMatrix(double[][] coords) {
+        int n = coords.length;
+        double[][] d = new double[n][n];
+        for (int i = 0; i < n; i++) {
+            for (int j = i + 1; j < n; j++) {
+                double dist = Math.hypot(coords[i][0] - coords[j][0], coords[i][1] - coords[j][1]);
+                d[i][j] = dist;
+                d[j][i] = dist;
+            }
+        }
+        return d;
+    }
+
+    private List<DoubleTriePredictor.SimpleCandle> createOscillatingCandles(int count) {
+        List<DoubleTriePredictor.SimpleCandle> list = new ArrayList<>();
+        double p = 100.0;
+        long time = 1700000000L;
+        for (int i = 0; i < count; i++) {
+            double delta = (i % 2 == 0 ? 1.0 : -0.85) * (0.8 + (i % 4) * 0.4);
+            double o = p;
+            double c = p + delta;
+            list.add(new DoubleTriePredictor.SimpleCandle(time, o, Math.max(o, c) + 0.4, Math.min(o, c) - 0.4, c, 1000));
+            p = c;
+            time += 900;
+        }
+        return list;
     }
 
     private List<DoubleTriePredictor.SimpleCandle> createMockCandles(int count, boolean trendUp) {

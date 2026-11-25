@@ -15,6 +15,7 @@ import {
 import { createChart, CandlestickSeries } from "lightweight-charts";
 import MagicBento, { type MagicBentoItem } from "./components/MagicBento";
 import CoinLogo from "./components/CoinLogo";
+import SimulationStudio from "./components/SimulationStudio";
 
 const BACKEND_URL = "http://localhost:8085";
 
@@ -40,7 +41,7 @@ interface MarketItem {
 }
 
 export default function MarketCentsApp() {
-  const [currentPage, setCurrentPage] = useState<"home" | "market">("home");
+  const [currentPage, setCurrentPage] = useState<"home" | "market" | "simulation">("home");
   const [timeStr, setTimeStr] = useState<string>("");
   const [scrolled, setScrolled] = useState<boolean>(false);
   const [mounted, setMounted] = useState<boolean>(false);
@@ -1048,6 +1049,16 @@ export default function MarketCentsApp() {
           >
             Market
           </button>
+          <button
+            onClick={() => setCurrentPage("simulation")}
+            className={`transition relative py-1 ${
+              currentPage === "simulation"
+                ? "text-white after:absolute after:bottom-0 after:left-0 after:right-0 after:h-[1.5px] after:bg-white font-bold"
+                : "text-white/60 hover:text-white"
+            }`}
+          >
+            Simulation
+          </button>
         </nav>
 
         {/* Empty Spacer to preserve exact center alignment */}
@@ -1993,6 +2004,17 @@ export default function MarketCentsApp() {
             </div>
           </footer>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* PAGE 3: SIMULATION LAB (Unit 6 Monte Carlo + Unit 5 Metric TSP)           */}
+      {/* ========================================================================= */}
+      {currentPage === "simulation" && (
+        <SimulationStudio
+          selectedPair={selectedPair}
+          onSelectPair={handleSelectCoin}
+          availablePairs={allTickers.map((t) => t.pair)}
+        />
       )}
     </div>
   );

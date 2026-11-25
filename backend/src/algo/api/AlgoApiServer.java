@@ -1,7 +1,9 @@
 package algo.api;
 
+import algo.approx.MetricTspApproximator;
 import algo.bloom.OrderFlowBloomFilter;
 import algo.flow.OrderFlowNetwork;
+import algo.sim.MonteCarloSimulator;
 import algo.stats.RandomizedQuickselect;
 import algo.test.AlgorithmTestSuite;
 import algo.trie.DoubleTriePredictor;
@@ -13,12 +15,14 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -40,6 +44,8 @@ public class AlgoApiServer {
     private final OrderFlowNetwork flowEngine = new OrderFlowNetwork();
     private final OrderFlowBloomFilter bloomFilter = new OrderFlowBloomFilter(1000, 0.02);
     private final RandomizedQuickselect quickselect = new RandomizedQuickselect();
+    private final MonteCarloSimulator monteCarloEngine = new MonteCarloSimulator();
+    private final MetricTspApproximator tspEngine = new MetricTspApproximator();
     private final AlgorithmTestSuite testSuite = new AlgorithmTestSuite();
 
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -63,6 +69,8 @@ public class AlgoApiServer {
         server.createContext("/api/flow/solve", new FlowSolveHandler());
         server.createContext("/api/bloom/screen", new BloomScreenHandler());
         server.createContext("/api/stats/benchmark", new StatsBenchmarkHandler());
+        server.createContext("/api/sim/montecarlo", new MonteCarloHandler());
+        server.createContext("/api/sim/tsp", new MetricTspHandler());
         server.createContext("/api/test/run", new TestRunHandler());
 
         server.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
@@ -77,6 +85,8 @@ public class AlgoApiServer {
         System.out.println("  * GET  /api/flow/solve?symbol=SOLUSDT");
         System.out.println("  * GET  /api/bloom/screen?signature=SPOOF_BID_ICEBERG_LARGE");
         System.out.println("  * GET  /api/stats/benchmark?size=10000");
+        System.out.println("  * GET  /api/sim/montecarlo?symbol=BTCUSDT&interval=15m&trials=2000&horizon=30&mode=GBM");
+        System.out.println("  * GET  /api/sim/tsp?symbols=BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT,AVAXUSDT,LINKUSDT");
         System.out.println("  * GET  /api/test/run");
         System.out.println("==========================================================================================");
     }
@@ -89,10 +99,10 @@ public class AlgoApiServer {
             {
                 "status": "ONLINE",
                 "service": "Advanced Algorithm Real-World Trading Engine",
-                "version": "2.0.0",
+                "version": "2.1.0",
                 "javaVersion": "%s",
-                "syllabusUnitsCovered": ["Unit 4: Tries", "Unit 5: Max-Flow Min-Cut", "Unit 6: Bloom Filter (CO5)", "Unit 1: Quickselect"],
-                "activeAlgorithms": 4,
+                "syllabusUnitsCovered": ["Unit 4: Tries", "Unit 5: Max-Flow Min-Cut", "Unit 5: Metric TSP 2-Approx", "Unit 6: Monte Carlo Simulation", "Unit 6: Bloom Filter (CO5)", "Unit 1/6: Quickselect"],
+                "activeAlgorithms": 6,
                 "timestamp": %d
             }
             """.formatted(System.getProperty("java.version"), System.currentTimeMillis());
@@ -293,7 +303,8 @@ public class AlgoApiServer {
         public void handle(HttpExchange exchange) throws IOException {
             if (handleCors(exchange)) return;
             Map<String, String> params = parseQueryParams(exchange.getRequestURI());
-            int size = Integer.parseInt(params.getOrDefault("size", "10000"));
+            int rawSize = Integer.parseInt(params.getOrDefault("size", "10000"));
+            int size = Math.max(10, Math.min(500000, rawSize));
             var bm = quickselect.benchmark(size, 0.95);
 
             String json = """
@@ -307,6 +318,213 @@ public class AlgoApiServer {
             }
             """.formatted(bm.arraySize(), bm.quantilePercentile(), bm.selectedValue(), bm.quickselectTimeNs(), bm.sortBaselineTimeNs(), bm.speedupFactor());
             sendJsonResponse(exchange, 200, json);
+        }
+    }
+
+    private class MonteCarloHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
+            Map<String, String> params = parseQueryParams(exchange.getRequestURI());
+            String symbol = params.getOrDefault("symbol", "BTCUSDT").trim().toUpperCase();
+            String interval = params.getOrDefault("interval", "15m").trim();
+            int trials = Integer.parseInt(params.getOrDefault("trials", "2000"));
+            int horizon = Integer.parseInt(params.getOrDefault("horizon", "30"));
+            String modeParam = params.getOrDefault("mode", "GBM").trim().toUpperCase();
+            double tpPct = Double.parseDouble(params.getOrDefault("tpPct", "2.0"));
+            double slPct = Double.parseDouble(params.getOrDefault("slPct", "1.5"));
+
+            try {
+                String url = String.format("https://api.binance.com/api/v3/klines?symbol=%s&interval=%s&limit=250", symbol, interval);
+                HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).header("User-Agent", "Mozilla/5.0").GET().build();
+                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+
+                List<DoubleTriePredictor.SimpleCandle> candles = parseKlines(resp.body());
+                if (candles.size() < 10) {
+                    sendJsonResponse(exchange, 400, "{\"error\":\"Insufficient historical candles for Monte Carlo calibration\"}");
+                    return;
+                }
+
+                MonteCarloSimulator.SimulationMode mode = "BOOTSTRAP".equals(modeParam)
+                        ? MonteCarloSimulator.SimulationMode.BOOTSTRAP
+                        : MonteCarloSimulator.SimulationMode.GBM;
+
+                var sim = monteCarloEngine.simulate(candles, trials, horizon, mode, tpPct, slPct);
+
+                StringBuilder json = new StringBuilder();
+                json.append("{");
+                json.append("\"symbol\":\"").append(escapeJson(symbol)).append("\",");
+                json.append("\"interval\":\"").append(escapeJson(interval)).append("\",");
+                json.append("\"mode\":\"").append(sim.mode()).append("\",");
+                json.append("\"spotPrice\":").append(sim.spotPrice()).append(",");
+                json.append("\"perBarDriftPct\":").append(sim.perBarDriftPct()).append(",");
+                json.append("\"perBarVolatilityPct\":").append(sim.perBarVolatilityPct()).append(",");
+                json.append("\"annualizedVolatilityPct\":").append(sim.annualizedVolatilityPct()).append(",");
+                json.append("\"trials\":").append(sim.trials()).append(",");
+                json.append("\"horizonSteps\":").append(sim.horizonSteps()).append(",");
+                json.append("\"tpPct\":").append(sim.tpPct()).append(",");
+                json.append("\"slPct\":").append(sim.slPct()).append(",");
+                json.append("\"terminalMeanPrice\":").append(sim.terminalMeanPrice()).append(",");
+                json.append("\"terminalMedianPrice\":").append(sim.terminalMedianPrice()).append(",");
+                json.append("\"theoreticalMeanPrice\":").append(sim.theoreticalMeanPrice()).append(",");
+                json.append("\"meanConvergenceErrorPct\":").append(sim.meanConvergenceErrorPct()).append(",");
+                json.append("\"var95Pct\":").append(sim.var95Pct()).append(",");
+                json.append("\"cvar95Pct\":").append(sim.cvar95Pct()).append(",");
+                json.append("\"probProfitPct\":").append(sim.probProfitPct()).append(",");
+                json.append("\"probTakeProfitPct\":").append(sim.probTakeProfitPct()).append(",");
+                json.append("\"probStopLossPct\":").append(sim.probStopLossPct()).append(",");
+                json.append("\"executionTimeNs\":").append(sim.executionTimeNs()).append(",");
+
+                appendDoubleArray(json, "p5Path", sim.p5Path()); json.append(",");
+                appendDoubleArray(json, "p25Path", sim.p25Path()); json.append(",");
+                appendDoubleArray(json, "p50Path", sim.p50Path()); json.append(",");
+                appendDoubleArray(json, "p75Path", sim.p75Path()); json.append(",");
+                appendDoubleArray(json, "p95Path", sim.p95Path()); json.append(",");
+
+                json.append("\"samplePaths\":[");
+                for (int i = 0; i < sim.samplePaths().size(); i++) {
+                    appendRawDoubleArray(json, sim.samplePaths().get(i));
+                    if (i < sim.samplePaths().size() - 1) json.append(",");
+                }
+                json.append("],");
+
+                json.append("\"histogram\":[");
+                for (int i = 0; i < sim.histogram().size(); i++) {
+                    var b = sim.histogram().get(i);
+                    json.append("{\"rangeStart\":").append(b.rangeStart())
+                        .append(",\"rangeEnd\":").append(b.rangeEnd())
+                        .append(",\"count\":").append(b.count()).append("}");
+                    if (i < sim.histogram().size() - 1) json.append(",");
+                }
+                json.append("]");
+                json.append("}");
+
+                sendJsonResponse(exchange, 200, json.toString());
+            } catch (Exception e) {
+                sendJsonResponse(exchange, 500, "{\"error\":\"" + escapeJson(String.valueOf(e.getMessage())) + "\"}");
+            }
+        }
+    }
+
+    private class MetricTspHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (handleCors(exchange)) return;
+            Map<String, String> params = parseQueryParams(exchange.getRequestURI());
+            String symbolsParam = params.getOrDefault("symbols", "BTCUSDT,ETHUSDT,SOLUSDT,BNBUSDT,XRPUSDT,DOGEUSDT,AVAXUSDT,LINKUSDT");
+            String interval = params.getOrDefault("interval", "1h").trim();
+
+            List<String> requested = new ArrayList<>();
+            for (String s : symbolsParam.split(",")) {
+                String clean = s.trim().toUpperCase();
+                if (!clean.isEmpty() && !requested.contains(clean)) {
+                    requested.add(clean);
+                }
+                if (requested.size() >= 12) break;
+            }
+            if (requested.size() < 2) {
+                sendJsonResponse(exchange, 400, "{\"error\":\"Provide at least 2 symbols for Metric TSP\"}");
+                return;
+            }
+
+            try {
+                // Fetch klines concurrently across all selected assets
+                List<CompletableFuture<List<DoubleTriePredictor.SimpleCandle>>> futures = new ArrayList<>();
+                for (String sym : requested) {
+                    futures.add(CompletableFuture.supplyAsync(() -> {
+                        try {
+                            String url = String.format("https://api.binance.com/api/v3/klines?symbol=%s&interval=%s&limit=120", sym, interval);
+                            HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).header("User-Agent", "Mozilla/5.0").GET().build();
+                            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                            return parseKlines(resp.body());
+                        } catch (Exception ex) {
+                            return Collections.emptyList();
+                        }
+                    }));
+                }
+
+                List<String> validSymbols = new ArrayList<>();
+                List<List<DoubleTriePredictor.SimpleCandle>> validCandles = new ArrayList<>();
+                int minLen = Integer.MAX_VALUE;
+                for (int i = 0; i < requested.size(); i++) {
+                    List<DoubleTriePredictor.SimpleCandle> c = futures.get(i).join();
+                    if (c.size() >= 20) {
+                        validSymbols.add(requested.get(i));
+                        validCandles.add(c);
+                        minLen = Math.min(minLen, c.size());
+                    }
+                }
+
+                if (validSymbols.size() < 2) {
+                    sendJsonResponse(exchange, 400, "{\"error\":\"Insufficient historical series across symbols\"}");
+                    return;
+                }
+
+                List<double[]> logReturns = new ArrayList<>(validSymbols.size());
+                for (List<DoubleTriePredictor.SimpleCandle> c : validCandles) {
+                    int offset = c.size() - minLen;
+                    double[] ret = new double[minLen - 1];
+                    for (int k = 1; k < minLen; k++) {
+                        double p0 = Math.max(c.get(offset + k - 1).close(), 1e-9);
+                        double p1 = Math.max(c.get(offset + k).close(), 1e-9);
+                        ret[k - 1] = Math.log(p1 / p0);
+                    }
+                    logReturns.add(ret);
+                }
+
+                var tsp = tspEngine.solveFromReturnSeries(validSymbols, logReturns);
+
+                StringBuilder json = new StringBuilder();
+                json.append("{");
+                json.append("\"interval\":\"").append(escapeJson(interval)).append("\",");
+                json.append("\"assetCount\":").append(tsp.nodes().size()).append(",");
+                json.append("\"mstCost\":").append(tsp.mstCost()).append(",");
+                json.append("\"approxCost\":").append(tsp.approxCost()).append(",");
+                json.append("\"nearestNeighborCost\":").append(tsp.nearestNeighborCost()).append(",");
+                json.append("\"exactOptimalCost\":").append(tsp.exactOptimalCost()).append(",");
+                json.append("\"approxRatioVsOpt\":").append(tsp.approxRatioVsOpt()).append(",");
+                json.append("\"approxBoundVsMst\":").append(tsp.approxBoundVsMst()).append(",");
+                json.append("\"validMetric\":").append(tsp.validMetric()).append(",");
+                json.append("\"approxTimeNs\":").append(tsp.approxTimeNs()).append(",");
+                json.append("\"exactTimeNs\":").append(tsp.exactTimeNs()).append(",");
+
+                json.append("\"nodes\":[");
+                for (int i = 0; i < tsp.nodes().size(); i++) {
+                    var node = tsp.nodes().get(i);
+                    json.append("{\"index\":").append(node.index())
+                        .append(",\"symbol\":\"").append(escapeJson(node.symbol())).append("\"")
+                        .append(",\"x\":").append(node.x())
+                        .append(",\"y\":").append(node.y()).append("}");
+                    if (i < tsp.nodes().size() - 1) json.append(",");
+                }
+                json.append("],");
+
+                json.append("\"mstEdges\":[");
+                for (int i = 0; i < tsp.mstEdges().size(); i++) {
+                    var e = tsp.mstEdges().get(i);
+                    json.append("{\"from\":").append(e.from())
+                        .append(",\"to\":").append(e.to())
+                        .append(",\"weight\":").append(e.weight()).append("}");
+                    if (i < tsp.mstEdges().size() - 1) json.append(",");
+                }
+                json.append("],");
+
+                appendIntList(json, "approxTour", tsp.approxTour()); json.append(",");
+                appendIntList(json, "nearestNeighborTour", tsp.nearestNeighborTour()); json.append(",");
+                appendIntList(json, "exactOptimalTour", tsp.exactOptimalTour()); json.append(",");
+
+                json.append("\"distanceMatrix\":[");
+                for (int i = 0; i < tsp.distanceMatrix().length; i++) {
+                    appendRawDoubleArray(json, tsp.distanceMatrix()[i]);
+                    if (i < tsp.distanceMatrix().length - 1) json.append(",");
+                }
+                json.append("]");
+                json.append("}");
+
+                sendJsonResponse(exchange, 200, json.toString());
+            } catch (Exception e) {
+                sendJsonResponse(exchange, 500, "{\"error\":\"" + escapeJson(String.valueOf(e.getMessage())) + "\"}");
+            }
         }
     }
 
@@ -363,13 +581,48 @@ public class AlgoApiServer {
 
     private static Map<String, String> parseQueryParams(URI uri) {
         Map<String, String> map = new HashMap<>();
-        String query = uri.getQuery();
+        String query = uri.getRawQuery();
         if (query == null) return map;
         for (String param : query.split("&")) {
-            String[] pair = param.split("=");
-            if (pair.length == 2) map.put(pair[0], pair[1]);
+            int eqIdx = param.indexOf('=');
+            if (eqIdx > 0) {
+                String k = URLDecoder.decode(param.substring(0, eqIdx), StandardCharsets.UTF_8);
+                String v = URLDecoder.decode(param.substring(eqIdx + 1), StandardCharsets.UTF_8);
+                map.put(k, v);
+            }
         }
         return map;
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r");
+    }
+
+    private static void appendDoubleArray(StringBuilder json, String name, double[] arr) {
+        json.append("\"").append(name).append("\":");
+        appendRawDoubleArray(json, arr);
+    }
+
+    private static void appendRawDoubleArray(StringBuilder json, double[] arr) {
+        json.append("[");
+        for (int i = 0; i < arr.length; i++) {
+            json.append(arr[i]);
+            if (i < arr.length - 1) json.append(",");
+        }
+        json.append("]");
+    }
+
+    private static void appendIntList(StringBuilder json, String name, List<Integer> list) {
+        json.append("\"").append(name).append("\":[");
+        for (int i = 0; i < list.size(); i++) {
+            json.append(list.get(i));
+            if (i < list.size() - 1) json.append(",");
+        }
+        json.append("]");
     }
 
     private static List<DoubleTriePredictor.SimpleCandle> parseKlines(String json) {
